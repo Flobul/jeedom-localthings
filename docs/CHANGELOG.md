@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Modernisation des pages de configuration et de santé, avec styles dédiés, présentation responsive et infobulles compatibles avec l’interface Jeedom.
+- Réorganisation de la documentation, ajout de captures d’écran et déclaration des liens de documentation et de changelog pour les canaux stable et bêta.
+- Mise en place d’une CI complète : syntaxes PHP et frontend, PHPStan avec le core Jeedom épinglé, validation Jeedom et i18n, audit des dépendances et détection des secrets.
+- Fiabilisation des lectures OCF multi-blocs et de la gestion des ressources après l’exécution d’une commande.
+- Correction des variables potentiellement indéfinies détectées par PHPStan dans le diagnostic OCF et le traitement des commandes.
+
+## 0.4.25
+
+- Une découverte peut désormais attendre jusqu’à six minutes lorsqu’un autre échange utilise déjà le même port UDP source, afin de ne plus interrompre les longues lectures OCF.
+- Les journaux distinguent l’attente normale d’un port occupé d’une impossibilité d’utiliser le verrou système.
+
 ## 0.4.24
 
 - Consigne numérique visible sur les curseurs dashboard/mobile, mise à jour pendant le déplacement et par le retour d’état, sans envoi de commande supplémentaire.
