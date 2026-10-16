@@ -144,6 +144,7 @@ class LocalThingsOcfDiagnostic
                 $mid = random_int(0, 65535);
                 $request = LocalThingsCoap::build(LocalThingsCoap::TYPE_CON, LocalThingsCoap::METHOD_GET, $mid, $token, $options);
                 $packet = null;
+                $blockValue = null;
                 $nextSend = 0;
                 $acknowledged = false;
                 while (microtime(true) < $deadline) {

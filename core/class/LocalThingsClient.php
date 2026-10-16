@@ -414,11 +414,6 @@ class LocalThingsDeviceClient
                     : array_merge((array) ($resources[$href] ?? array()), $write['body']);
             }
             $resources[$href] = array_merge((array) ($resources[$href] ?? array()), $representation);
-            if ($readOnly) {
-                $resources = array_filter($resources, function ($rep, $href) {
-                    return self::isBusinessResource($href, $rep);
-                }, ARRAY_FILTER_USE_BOTH);
-            }
             $mapped = $this->mapper->map($resources);
             return array(
                 'success' => true,

@@ -34,7 +34,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
                         <i class="fas fa-key"></i> {{OwnerPSK}}
                     </button>
                     <button type="button" id="bt_certificateLocalthings" class="btn btn-warning"
-                            title="{{Comparer les profils de certificat acceptés par cet appareil}}">
+                            data-title="{{Comparer les profils de certificat acceptés par cet appareil}}">
                         <i class="fas fa-certificate"></i> {{Comparer les certificats}}
                     </button>
                     <button type="button" id="bt_probeLocalthings" class="btn btn-primary roundedRight">
@@ -70,7 +70,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
         <div class="input-group" style="margin:5px;">
             <input class="form-control roundedLeft" placeholder="{{Rechercher}}" id="in_searchEqlogic">
             <span class="input-group-btn">
-                <button type="button" id="bt_resetSearch" class="btn btn-default roundedRight" title="{{Réinitialiser}}">
+                <button type="button" id="bt_resetSearch" class="btn btn-default roundedRight" data-title="{{Réinitialiser}}">
                     <i class="fas fa-times"></i>
                 </button>
             </span>
@@ -169,7 +169,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
                             <div class="form-group">
                                 <label class="col-sm-4 control-label">
                                     {{Contrôle sans Smart Control}}
-                                    <sup><i class="fas fa-question-circle" title="{{Contourne le verrou de sécurité local pour les appareils qui acceptent certaines commandes même lorsque Smart Control est désactivé. À utiliser uniquement si nécessaire.}}"></i></sup>
+                                    <sup><i class="fas fa-question-circle" data-title="{{Contourne le verrou de sécurité local pour les appareils qui acceptent certaines commandes même lorsque Smart Control est désactivé. À utiliser uniquement si nécessaire.}}"></i></sup>
                                 </label>
                                 <div class="col-sm-7">
                                     <label class="checkbox-inline">
@@ -181,7 +181,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
                             <div class="form-group">
                                 <label class="col-sm-4 control-label">
                                     {{Widget}}
-                                    <sup><i class="fas fa-question-circle" title="{{Le widget LocalThings organise les commandes natives Jeedom selon le type de l’appareil.}}"></i></sup>
+                                    <sup><i class="fas fa-question-circle" data-title="{{Le widget LocalThings organise les commandes natives Jeedom selon le type de l’appareil.}}"></i></sup>
                                 </label>
                                 <div class="col-sm-7">
                                     <select class="eqLogicAttr form-control" data-l1key="display" data-l2key="widgetTmpl">

@@ -154,7 +154,7 @@ foreach ($eqLogics as $eqLogic) {
                             <td>
                                 <button type="button" class="btn btn-default btn-xs bt_testHealthCommunication"
                                         data-eqlogic_id="<?php echo (int) $eqLogic->getId(); ?>"
-                                        title="{{Tester la communication}}">
+                                        data-title="{{Tester la communication}}">
                                     <i class="fas fa-satellite-dish"></i>
                                 </button>
                             </td>
