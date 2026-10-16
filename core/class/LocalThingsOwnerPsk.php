@@ -14,10 +14,10 @@ class LocalThingsOwnerPsk
     public static function uuidBytes($uuid)
     {
         if (!is_string($uuid) || !preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/D', $uuid)) {
-            throw new InvalidArgumentException('UUID OCF canonique attendu');
+            throw new InvalidArgumentException(__('UUID OCF canonique attendu', __FILE__));
         }
         $bytes = hex2bin(str_replace('-', '', $uuid));
-        if ($bytes === str_repeat("\0", 16)) { throw new InvalidArgumentException('UUID OCF nul interdit'); }
+        if ($bytes === str_repeat("\0", 16)) { throw new InvalidArgumentException(__('UUID OCF nul interdit', __FILE__)); }
         return $bytes;
     }
 
@@ -26,11 +26,11 @@ class LocalThingsOwnerPsk
         $owner = self::uuidBytes($credential['owner_uuid'] ?? null);
         self::uuidBytes($credential['device_uuid'] ?? null);
         if (strpos($owner, "\0") !== false) {
-            throw new InvalidArgumentException('UUID propriétaire incompatible avec le transport OpenSSL : octet nul');
+            throw new InvalidArgumentException(__('UUID propriétaire incompatible avec le transport OpenSSL : octet nul', __FILE__));
         }
         if (!isset($credential['key']) || !is_string($credential['key'])
             || !preg_match('/^[a-fA-F0-9]{32}$/D', $credential['key'])) {
-            throw new InvalidArgumentException('OwnerPSK attendue : 32 caractères hexadécimaux (16 octets)');
+            throw new InvalidArgumentException(__('OwnerPSK attendue : 32 caractères hexadécimaux (16 octets)', __FILE__));
         }
         return array('owner_uuid' => $credential['owner_uuid'], 'device_uuid' => $credential['device_uuid'],
             'key' => strtolower($credential['key']));
@@ -40,10 +40,10 @@ class LocalThingsOwnerPsk
     public static function derive($masterSecret, $clientRandom, $serverRandom, $ownerUuid, $deviceUuid, $oxm, $cipher)
     {
         foreach (array(array($masterSecret, 48), array($clientRandom, 32), array($serverRandom, 32)) as $part) {
-            if (!is_string($part[0]) || strlen($part[0]) !== $part[1]) { throw new InvalidArgumentException('État DTLS de dérivation invalide'); }
+            if (!is_string($part[0]) || strlen($part[0]) !== $part[1]) { throw new InvalidArgumentException(__('État DTLS de dérivation invalide', __FILE__)); }
         }
         if ($cipher !== 'ECDHE-ECDSA-AES128-GCM-SHA256' || !in_array($oxm, array(2, 65282), true)) {
-            throw new InvalidArgumentException('Profil de dérivation OwnerPSK non pris en charge');
+            throw new InvalidArgumentException(__('Profil de dérivation OwnerPSK non pris en charge', __FILE__));
         }
         $label = $oxm === 2 ? 'oic.sec.doxm.mfgcert' : 'x.org.iotivity.conmfgcert';
         $keyBlock = self::pHash($masterSecret, 'key expansion' . $serverRandom . $clientRandom, 120);
@@ -62,7 +62,7 @@ class LocalThingsOwnerPsk
 
     private function path($host)
     {
-        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) { throw new InvalidArgumentException('Adresse IPv4 invalide'); }
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) { throw new InvalidArgumentException(__('Adresse IPv4 invalide', __FILE__)); }
         return $this->directory . '/' . hash('sha256', $host) . '.php';
     }
 
@@ -71,9 +71,9 @@ class LocalThingsOwnerPsk
         $path = $this->path($host);
         if (!is_file($path)) { return null; }
         $raw = file_get_contents($path);
-        if (substr($raw, 0, strlen(self::PREFIX)) !== self::PREFIX) { throw new RuntimeException('Stockage OwnerPSK invalide'); }
+        if (substr($raw, 0, strlen(self::PREFIX)) !== self::PREFIX) { throw new RuntimeException(__('Stockage OwnerPSK invalide', __FILE__)); }
         $data = json_decode(substr($raw, strlen(self::PREFIX)), true);
-        if (!is_array($data)) { throw new RuntimeException('Stockage OwnerPSK invalide'); }
+        if (!is_array($data)) { throw new RuntimeException(__('Stockage OwnerPSK invalide', __FILE__)); }
         return self::validate($data);
     }
 
@@ -83,22 +83,22 @@ class LocalThingsOwnerPsk
         $credential = self::validate($credential);
         $path = $this->path($host);
         if (!is_dir($this->directory) && !mkdir($this->directory, 0700, true) && !is_dir($this->directory)) {
-            throw new RuntimeException('Stockage OwnerPSK inaccessible');
+            throw new RuntimeException(__('Stockage OwnerPSK inaccessible', __FILE__));
         }
-        if (!chmod($this->directory, 0700)) { throw new RuntimeException('Permissions OwnerPSK non garanties'); }
+        if (!chmod($this->directory, 0700)) { throw new RuntimeException(__('Permissions OwnerPSK non garanties', __FILE__)); }
         $temporary = tempnam($this->directory, '.pending-');
-        if ($temporary === false) { throw new RuntimeException('Stockage OwnerPSK inaccessible'); }
+        if ($temporary === false) { throw new RuntimeException(__('Stockage OwnerPSK inaccessible', __FILE__)); }
         $protectedTemporary = $temporary . '.php';
         if (!rename($temporary, $protectedTemporary)) {
             unlink($temporary);
-            throw new RuntimeException('Préparation du stockage OwnerPSK impossible');
+            throw new RuntimeException(__('Préparation du stockage OwnerPSK impossible', __FILE__));
         }
         $temporary = $protectedTemporary;
         try {
-            if (!chmod($temporary, 0600)) { throw new RuntimeException('Permissions OwnerPSK non garanties'); }
+            if (!chmod($temporary, 0600)) { throw new RuntimeException(__('Permissions OwnerPSK non garanties', __FILE__)); }
             $data = self::PREFIX . json_encode($credential, JSON_UNESCAPED_SLASHES);
             if (file_put_contents($temporary, $data, LOCK_EX) !== strlen($data) || !rename($temporary, $path)) {
-                throw new RuntimeException('Enregistrement OwnerPSK impossible');
+                throw new RuntimeException(__('Enregistrement OwnerPSK impossible', __FILE__));
             }
         } finally { if (is_file($temporary)) { unlink($temporary); } }
     }
@@ -116,7 +116,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
     public function __construct($host, $port, array $credential)
     {
         if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || $port < 1 || $port > 65535) {
-            throw new InvalidArgumentException('Endpoint OwnerPSK invalide');
+            throw new InvalidArgumentException(__('Endpoint OwnerPSK invalide', __FILE__));
         }
         $this->host = $host; $this->port = (int) $port;
         $this->credential = LocalThingsOwnerPsk::validate($credential);
@@ -128,7 +128,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         $this->process = proc_open(array('python3', __DIR__ . '/../../resources/owner_psk_transport.py'),
             array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('file', '/dev/null', 'w')),
             $this->pipes, null, null, array('bypass_shell' => true));
-        if (!is_resource($this->process)) { throw new RuntimeException('Transport OwnerPSK indisponible (Python 3 et libssl requis)'); }
+        if (!is_resource($this->process)) { throw new RuntimeException(__('Transport OwnerPSK indisponible (Python 3 et libssl requis)', __FILE__)); }
         stream_set_blocking($this->pipes[1], false);
         try {
             $this->rpc(array('action' => 'connect', 'host' => $this->host, 'port' => $this->port,
@@ -140,19 +140,19 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
             list($code, $payload) = $session->get('/oic/d', 8.0);
             $device = $code === 69 ? LocalThingsCbor::decode($payload) : array();
             if (!is_array($device) || ($device['di'] ?? '') !== $this->credential['device_uuid']) {
-                throw new RuntimeException('Identité de l’appareil OwnerPSK non confirmée');
+                throw new RuntimeException(__('Identité de l’appareil OwnerPSK non confirmée', __FILE__));
             }
         } catch (Throwable $error) { $this->close(); throw $error; }
     }
 
     private function rpc(array $request, $timeout)
     {
-        if (!is_resource($this->process)) { throw new RuntimeException('Session OwnerPSK fermée'); }
+        if (!is_resource($this->process)) { throw new RuntimeException(__('Session OwnerPSK fermée', __FILE__)); }
         $data = json_encode($request) . "\n";
         $offset = 0;
         while ($offset < strlen($data)) {
             $written = fwrite($this->pipes[0], substr($data, $offset));
-            if (!$written) { throw new RuntimeException('Transport OwnerPSK interrompu'); }
+            if (!$written) { throw new RuntimeException(__('Transport OwnerPSK interrompu', __FILE__)); }
             $offset += $written;
         }
         fflush($this->pipes[0]);
@@ -162,13 +162,13 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
             $response .= stream_get_contents($this->pipes[1]);
             if (strpos($response, "\n") !== false) {
                 $decoded = json_decode($response, true);
-                if (!is_array($decoded) || empty($decoded['ok'])) { throw new RuntimeException('Session OwnerPSK impossible ou interrompue'); }
+                if (!is_array($decoded) || empty($decoded['ok'])) { throw new RuntimeException(__('Session OwnerPSK impossible ou interrompue', __FILE__)); }
                 return $decoded['result'] ?? null;
             }
             if (strlen($response) > 200000 || feof($this->pipes[1])) { break; }
             usleep(10000);
         }
-        throw new RuntimeException('Délai OwnerPSK dépassé ou transport indisponible');
+        throw new RuntimeException(__('Délai OwnerPSK dépassé ou transport indisponible', __FILE__));
     }
 
     public function write($data) { $this->rpc(array('action' => 'write', 'data' => base64_encode($data)), 4.0); }
@@ -177,7 +177,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         $result = $this->rpc(array('action' => 'read', 'timeout' => $timeout), $timeout + 1);
         if ($result === null) { return null; }
         $frame = base64_decode($result, true);
-        if ($frame === false) { throw new RuntimeException('Trame OwnerPSK invalide'); }
+        if ($frame === false) { throw new RuntimeException(__('Trame OwnerPSK invalide', __FILE__)); }
         return $frame;
     }
     public function errorSummary() { return 'Transport OwnerPSK'; }

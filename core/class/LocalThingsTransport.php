@@ -956,7 +956,7 @@ class LocalThingsUdpRelay
     {
         $socket = @stream_socket_server('udp://' . $address, $errno, $error, STREAM_SERVER_BIND);
         if ($socket === false) {
-            throw new RuntimeException('Relais UDP impossible sur ' . $address . ' : ' . $error . ' (' . $errno . ')');
+            throw new RuntimeException(__('Relais UDP impossible sur ', __FILE__) . $address . ' : ' . $error . ' (' . $errno . ')');
         }
         stream_set_blocking($socket, false);
         return $socket;
@@ -966,7 +966,7 @@ class LocalThingsUdpRelay
     private function send($socket, $packet, $peer)
     {
         if (@stream_socket_sendto($socket, $packet, 0, $peer) !== strlen($packet)) {
-            throw new RuntimeException('Transmission du relais UDP impossible vers ' . $peer);
+            throw new RuntimeException(__('Transmission du relais UDP impossible vers ', __FILE__) . $peer);
         }
     }
 
@@ -1195,9 +1195,9 @@ class LocalThingsDtlsClient
                 );
                 if (stripos($error, 'alert unknown ca') !== false || stripos($error, 'alert read:fatal:unknown CA') !== false) {
                     throw new LocalThingsClientCertificateRejected(
-                        'Appareil joignable sur ' . $this->host . ':' . $this->port
-                        . ' mais certificat client refusé par l’appareil (alerte DTLS unknown_ca / 48). '
-                        . 'Le profil d’authentification actuel n’est pas accepté.'
+                        __('Appareil joignable sur ', __FILE__) . $this->host . ':' . $this->port
+                        . __(' mais certificat client refusé par l’appareil (alerte DTLS unknown_ca / 48). ', __FILE__)
+                        . __('Le profil d’authentification actuel n’est pas accepté.', __FILE__)
                     );
                 }
                 throw new RuntimeException(__('Connexion DTLS refusée', __FILE__) . ($error !== '' ? ' : ' . $error : ''));
@@ -1249,7 +1249,7 @@ class LocalThingsDtlsClient
                 && $packet['payload'] === '';
             $ack = $packet['type'] === LocalThingsCoap::TYPE_ACK && $packet['code'] === 0 && strlen($data) === 4;
             if (!$get && !$ack) {
-                throw new LogicException('Le diagnostic DTLS sans certificat client autorise uniquement GET et ACK');
+                throw new LogicException(__('Le diagnostic DTLS sans certificat client autorise uniquement GET et ACK', __FILE__));
             }
         }
         $offset = 0;
@@ -1280,7 +1280,7 @@ class LocalThingsDtlsClient
             $this->relay->pump();
             $this->drainStderr();
             if (!$this->isRunning() || microtime(true) >= $deadline) {
-                throw new RuntimeException('Transmission DTLS interrompue : ' . $this->errorSummary());
+                throw new RuntimeException(__('Transmission DTLS interrompue : ', __FILE__) . $this->errorSummary());
             }
             if ($this->relay->sentCount() === $sentBefore) {
                 usleep(1000);
@@ -1531,7 +1531,7 @@ class LocalThingsDtlsClient
             throw new InvalidArgumentException(__('Port DTLS invalide', __FILE__));
         }
         if ($this->serverAuthReadOnly && ($this->certificatePath !== '' || $this->certificateChainPath !== '' || $this->keyPath !== '')) {
-            throw new InvalidArgumentException('Une identité cliente ne peut pas être fournie au diagnostic sans certificat');
+            throw new InvalidArgumentException(__('Une identité cliente ne peut pas être fournie au diagnostic sans certificat', __FILE__));
         }
         $paths = $this->serverAuthReadOnly ? array($this->rootCaPath)
             : array($this->certificatePath, $this->keyPath, $this->rootCaPath);

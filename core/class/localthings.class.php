@@ -1754,7 +1754,7 @@ class localthingsCmd extends cmd
             return $eqLogic->refresh();
         }
         if ($eqLogic->getConfiguration('auth_mode', 'certificate') === LocalThingsDeviceClient::AUTH_READ_ONLY) {
-            throw new LocalThingsCommandRejectedException('Cet appareil est connecté en lecture seule ; pilotage non validé');
+            throw new LocalThingsCommandRejectedException(__('Cet appareil est connecté en lecture seule ; pilotage non validé', __FILE__));
         }
         $connected = $eqLogic->getCmd('info', 'connected');
         if (!is_object($connected) || (int) $connected->execCmd() !== 1) {

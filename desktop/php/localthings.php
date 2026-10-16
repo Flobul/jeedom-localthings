@@ -17,7 +17,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
                 <span>{{Configuration}}</span>
             </div>
             <div class="cursor logoSecondary" id="bt_healthLocalthings">
-                <i class="fas fa-medkit"></i><br>
+                <i class="fas fa-heartbeat"></i><br>
                 <span>{{Santé}}</span>
             </div>
             <div class="cursor logoPrimary" id="bt_scanLocalthings">

@@ -587,3 +587,30 @@
   color: inherit;
   text-align: center;
 }
+
+/* ===== Dark theme ===== */
+[data-theme="core2019_Dark"] .localthings-widget {
+  background: #2a2a2a !important;
+  color: rgba(255, 255, 255, 0.87) !important;
+}
+
+[data-theme="core2019_Dark"] .localthings-widget .localthings-widget-command-presented {
+  background: rgba(127, 127, 127, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="core2019_Dark"] .localthings-widget .localthings-widget-command-presented:hover {
+  border-color: rgba(46, 170, 219, 0.28) !important;
+}
+
+[data-theme="core2019_Dark"] .localthings-widget-tabs > li.active > button {
+  color: #2eaadb !important;
+}
+
+[data-theme="core2019_Dark"] .localthings-widget-command-label {
+  opacity: 0.72;
+}
+
+[data-theme="core2019_Dark"] .localthings-slider-value {
+  color: rgba(255, 255, 255, 0.87) !important;
+}

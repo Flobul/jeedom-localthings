@@ -18,10 +18,10 @@ class LocalThingsOcfDiagnostic
     public function __construct($host, $port = 5683, $session = null)
     {
         if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || $port < 1 || $port > 65535) {
-            throw new InvalidArgumentException('Adresse OCF invalide');
+            throw new InvalidArgumentException(__('Adresse OCF invalide', __FILE__));
         }
         if ($session !== null && !($session instanceof LocalThingsSession)) {
-            throw new InvalidArgumentException('Session de diagnostic OCF invalide');
+            throw new InvalidArgumentException(__('Session de diagnostic OCF invalide', __FILE__));
         }
         $this->session = $session;
         $this->host = $host;
@@ -93,10 +93,10 @@ class LocalThingsOcfDiagnostic
     public function read($path, $query = array(), $timeout = 2.0)
     {
         if (!in_array($path, self::PATHS, true) && !in_array($path, $this->provisioningPaths, true)) {
-            throw new InvalidArgumentException('Ressource de diagnostic non autorisée');
+            throw new InvalidArgumentException(__('Ressource de diagnostic non autorisée', __FILE__));
         }
         if ($query && ($path !== '/oic/res' || !in_array($query, array(array('rt=oic.r.doxm'), array('rt=x.com.samsung.provisioninginfo')), true))) {
-            throw new InvalidArgumentException('Filtre OCF non autorisé');
+            throw new InvalidArgumentException(__('Filtre OCF non autorisé', __FILE__));
         }
         $this->received = $this->matched = $this->echoes = $this->nonResponses = 0;
         $this->stage = 'transport';
@@ -105,12 +105,12 @@ class LocalThingsOcfDiagnostic
             $this->stage = 'lecture CoAP sécurisée';
             list($code, $payload) = $this->session->get($path, $timeout, $query);
             if (!in_array($code >> 5, array(2, 4, 5), true)) {
-                throw new RuntimeException('Code CoAP sans réponse valide');
+                throw new RuntimeException(__('Code CoAP sans réponse valide', __FILE__));
             }
             $this->matched = 1;
             if (($code >> 5) !== 2) { return array('code' => $code, 'fields' => array()); }
             $this->stage = 'décodage';
-            if (strlen($payload) > 65536) { throw new RuntimeException('Réponse OCF trop volumineuse'); }
+            if (strlen($payload) > 65536) { throw new RuntimeException(__('Réponse OCF trop volumineuse', __FILE__)); }
             $consumed = 0;
             $decoded = null;
             try {
@@ -118,14 +118,14 @@ class LocalThingsOcfDiagnostic
                 if ($consumed === strlen($payload)) { $decoded = $candidate; }
             } catch (Throwable $error) { /* Un serveur peut aussi proposer JSON. */ }
             if (!is_array($decoded)) { $decoded = json_decode($payload, true, 32); }
-            if (!is_array($decoded)) { throw new RuntimeException('Contenu OCF invalide'); }
+            if (!is_array($decoded)) { throw new RuntimeException(__('Contenu OCF invalide', __FILE__)); }
             return array('code' => $code, 'fields' => $this->summarize($path, $decoded));
         }
         $socket = @stream_socket_server('udp://0.0.0.0:0', $errno, $error, STREAM_SERVER_BIND);
         $target = $this->host . ':' . $this->port;
         $pinned = null;
         if ($socket === false) {
-            throw new RuntimeException('Service OCF inaccessible');
+            throw new RuntimeException(__('Service OCF inaccessible', __FILE__));
         }
         stream_set_blocking($socket, false);
         $deadline = microtime(true) + max(0.01, min(3.0, $timeout));
@@ -150,7 +150,7 @@ class LocalThingsOcfDiagnostic
                     LocalThingsDiscovery::checkpoint();
                     if (!$acknowledged && microtime(true) >= $nextSend) {
                         if (@stream_socket_sendto($socket, $request, 0, $target) !== strlen($request)) {
-                            throw new RuntimeException('Envoi CoAP impossible');
+                            throw new RuntimeException(__('Envoi CoAP impossible', __FILE__));
                         }
                         $nextSend = microtime(true) + 1.0;
                     }
@@ -165,7 +165,7 @@ class LocalThingsOcfDiagnostic
                     if (substr($peer, 0, strrpos($peer, ':')) !== $this->host || ($pinned !== null && $peer !== $pinned)) { continue; }
                     $this->stage = 'corrélation CoAP';
                     if ($bytes === false || strlen($bytes) > 16384) {
-                        throw new RuntimeException('Réception CoAP impossible');
+                        throw new RuntimeException(__('Réception CoAP impossible', __FILE__));
                     }
                     try {
                         $response = LocalThingsCoap::parse($bytes);
@@ -175,7 +175,7 @@ class LocalThingsOcfDiagnostic
                     if ($peer === $target && $response['message_id'] === $mid && $response['code'] === 0
                         && $response['token'] === '' && !$response['options'] && $response['payload'] === '') {
                         if ($response['type'] === LocalThingsCoap::TYPE_RST) {
-                            throw new RuntimeException('Requête CoAP refusée');
+                            throw new RuntimeException(__('Requête CoAP refusée', __FILE__));
                         }
                         if ($response['type'] === LocalThingsCoap::TYPE_ACK) {
                             $acknowledged = true;
@@ -208,7 +208,7 @@ class LocalThingsOcfDiagnostic
                     break;
                 }
                 if ($packet === null) {
-                    throw new RuntimeException('Délai CoAP dépassé');
+                    throw new RuntimeException(__('Délai CoAP dépassé', __FILE__));
                 }
                 if (($packet['code'] >> 5) !== 2) {
                     return array('code' => $packet['code'], 'fields' => array());
@@ -216,42 +216,42 @@ class LocalThingsOcfDiagnostic
                 $tags = LocalThingsCoap::optionValues($packet, 4);
                 $currentTag = $tags ? $tags[0] : null;
                 if ($block > 0 && $currentTag !== $etag) {
-                    throw new RuntimeException('Représentation OCF modifiée entre deux blocs');
+                    throw new RuntimeException(__('Représentation OCF modifiée entre deux blocs', __FILE__));
                 }
                 $etag = $currentTag;
                 if ($blockValue !== null) {
                     $nextSzx = $blockValue & 7;
                     if ($nextSzx > 6 || ($block > 0 && $nextSzx !== $szx)) {
-                        throw new RuntimeException('Taille de bloc OCF inattendue');
+                        throw new RuntimeException(__('Taille de bloc OCF inattendue', __FILE__));
                     }
                     $szx = $nextSzx;
                 } elseif ($block > 0) {
-                    throw new RuntimeException('Réponse OCF fragmentée incomplète');
+                    throw new RuntimeException(__('Réponse OCF fragmentée incomplète', __FILE__));
                 }
                 $payload .= $packet['payload'];
                 if (strlen($payload) > 65536) {
-                    throw new RuntimeException('Réponse OCF trop volumineuse');
+                    throw new RuntimeException(__('Réponse OCF trop volumineuse', __FILE__));
                 }
                 if ($blockValue === null || ($blockValue & 8) === 0) {
                     $formats = LocalThingsCoap::optionValues($packet, LocalThingsCoap::OPTION_CONTENT_FORMAT);
                     $format = $formats ? LocalThingsCoap::uintOption($formats[0]) : 60;
                     if (!in_array($format, array(50, 60, 10000), true)) {
-                        throw new RuntimeException('Format OCF non pris en charge');
+                        throw new RuntimeException(__('Format OCF non pris en charge', __FILE__));
                     }
                     $this->stage = 'décodage';
                     $consumed = 0;
                     $decoded = $format === 50 ? json_decode($payload, true, 32) : LocalThingsCbor::decode($payload, $consumed);
                     if (!is_array($decoded) || ($format !== 50 && $consumed !== strlen($payload))) {
-                        throw new RuntimeException('Contenu OCF invalide');
+                        throw new RuntimeException(__('Contenu OCF invalide', __FILE__));
                     }
                     $summary = $this->summarize($path, $decoded);
                     return array('code' => $packet['code'], 'fields' => $summary);
                 }
                 if (strlen($packet['payload']) !== (1 << ($szx + 4))) {
-                    throw new RuntimeException('Bloc OCF incomplet');
+                    throw new RuntimeException(__('Bloc OCF incomplet', __FILE__));
                 }
             }
-            throw new RuntimeException('Trop de blocs OCF');
+            throw new RuntimeException(__('Trop de blocs OCF', __FILE__));
         } finally {
             fclose($socket);
         }
@@ -308,7 +308,7 @@ class LocalThingsOcfDiagnostic
             $candidates = isset($container['links']) && is_array($container['links'])
                 ? $container['links'] : (isset($container['href']) ? array($container) : array());
             foreach ($candidates as $link) {
-                if (count($links) >= 256) { throw new RuntimeException('Répertoire OCF trop volumineux'); }
+                if (count($links) >= 256) { throw new RuntimeException(__('Répertoire OCF trop volumineux', __FILE__)); }
                 if (is_array($link)) { $links[] = $link; }
             }
         }

@@ -143,10 +143,10 @@ class LocalThingsDeviceClient
             return $diagnostic['snapshot'];
         }
         if (!empty($diagnostic['connected'])) {
-            throw new RuntimeException('Connexion DTLS sans certificat client réussie, mais aucun état exploitable obtenu ; '
-                . 'équipement non créé. ' . ($diagnostic['access_hint'] ?? 'Consulter les lignes [OCF lecture seule].'));
+            throw new RuntimeException(__('Connexion DTLS sans certificat client réussie, mais aucun état exploitable obtenu ; ', __FILE__)
+                . __('équipement non créé. ', __FILE__) . ($diagnostic['access_hint'] ?? __('Consulter les lignes [OCF lecture seule].', __FILE__)));
         }
-        throw new RuntimeException('Connexion DTLS sans certificat client échouée');
+        throw new RuntimeException(__('Connexion DTLS sans certificat client échouée', __FILE__));
     }
 
     /**
@@ -235,18 +235,18 @@ class LocalThingsDeviceClient
                 if (!is_array($doxm) || ($doxm['owned'] ?? false) !== true
                     || ($doxm['deviceuuid'] ?? '') !== $credential['device_uuid']
                     || ($doxm['devowneruuid'] ?? '') !== $credential['owner_uuid']) {
-                    throw new RuntimeException('Propriétaire et appareil OwnerPSK non confirmés');
+                    throw new RuntimeException(__('Propriétaire et appareil OwnerPSK non confirmés', __FILE__));
                 }
                 list($code, $payload) = $session->get('/oic/sec/pstat', 8.0);
                 $pstat = $code === 69 ? LocalThingsCbor::decode($payload) : array();
                 if (!is_array($pstat) || ($pstat['isop'] ?? false) !== true) {
-                    throw new RuntimeException('Association OwnerPSK non finalisée : appareil non opérationnel');
+                    throw new RuntimeException(__('Association OwnerPSK non finalisée : appareil non opérationnel', __FILE__));
                 }
                 $resources = $this->readOnlyResources($session, 60.0);
                 $business = $this->mapper->map(array_filter($resources, function ($rep, $href) {
                     return self::isBusinessResource($href, $rep);
                 }, ARRAY_FILTER_USE_BOTH));
-                if (!$business['entities']) { throw new RuntimeException('OwnerPSK : aucun état métier lisible, clé non enregistrée'); }
+                if (!$business['entities']) { throw new RuntimeException(__('OwnerPSK : aucun état métier lisible, clé non enregistrée', __FILE__)); }
                 (new LocalThingsOwnerPsk($this->certificateStore->dataDirectory()))->saveVerified($host, $credential);
                 $this->log('info', '[OwnerPSK] Identités et lecture métier vérifiées ; clé enregistrée localement');
                 return array('verified' => true, 'port' => $port, 'message' => 'Clé vérifiée et enregistrée. Vous pouvez utiliser Ajouter par IP.');
@@ -267,7 +267,7 @@ class LocalThingsDeviceClient
         // Une erreur d'authentification ou de lecture n'est pas une ambiguïté.
         $candidatePorts = LocalThingsDtlsProbe::livePorts($results);
         if (!$candidatePorts) {
-            throw new RuntimeException('Aucun service DTLS acceptant un ClientHello initial détecté');
+            throw new RuntimeException(__('Aucun service DTLS acceptant un ClientHello initial détecté', __FILE__));
         }
         try {
             $selected = LocalThingsDtlsProbe::select($results, $selectionPreference);
@@ -783,7 +783,7 @@ class LocalThingsDeviceClient
             if ($individualFallback && !$this->mapper->map(array_filter($resources, function ($rep, $href) {
                 return self::isBusinessResource($href, $rep);
             }, ARRAY_FILTER_USE_BOTH))['entities']) {
-                throw new RuntimeException('Connexion DTLS réussie mais aucun état métier lisible via /device/0 ou /oic/res');
+                throw new RuntimeException(__('Connexion DTLS réussie mais aucun état métier lisible via /device/0 ou /oic/res', __FILE__));
             }
             if ($readOnly) {
                 foreach ($mapped['entities'] as &$entity) { $entity['actions'] = array(); }
@@ -793,7 +793,7 @@ class LocalThingsDeviceClient
                 }, ARRAY_FILTER_USE_BOTH);
                 $business = $this->mapper->map($businessResources);
                 if (!$business['entities']) {
-                    throw new RuntimeException('Session DTLS établie mais aucun état de fonctionnement reconnu ; les informations réseau et de maintenance ne suffisent pas');
+                    throw new RuntimeException(__('Session DTLS établie mais aucun état de fonctionnement reconnu ; les informations réseau et de maintenance ne suffisent pas', __FILE__));
                 }
                 $this->log('info', '[OCF lecture seule] ressources=' . count($resources)
                     . ' ; états reconnus=' . count($mapped['states']) . ' ; actions désactivées');
@@ -991,9 +991,9 @@ class LocalThingsDeviceClient
             );
         if (!$resources) {
             throw new RuntimeException($denied > 0
-                ? 'Appareil joignable ; refus de lecture CoAP 4.01/4.03 ; aucun état reçu'
-                    . (($untested || $timeouts || $truncated) ? ' ; certaines ressources restent non vérifiées' : '')
-                : 'Aucune représentation métier accessible en lecture seule');
+                ? __('Appareil joignable ; refus de lecture CoAP 4.01/4.03 ; aucun état reçu', __FILE__)
+                    . (($untested || $timeouts || $truncated) ? __(' ; certaines ressources restent non vérifiées', __FILE__) : '')
+                : __('Aucune représentation métier accessible en lecture seule', __FILE__));
         }
         return $resources;
     }
@@ -1385,7 +1385,7 @@ class LocalThingsDiscovery
     public static function start($workerPath, $networks = array(), $hosts = array(), $logPath = null)
     {
         if (!function_exists('exec') || !function_exists('proc_open')) {
-            throw new RuntimeException('exec et proc_open sont nécessaires à la découverte');
+            throw new RuntimeException(__('exec et proc_open sont nécessaires à la découverte', __FILE__));
         }
         $hosts = count($hosts) > 0 ? self::validateHosts($hosts) : array();
         $networks = count($hosts) === 0 ? self::validateNetworks($networks) : array();
@@ -1443,7 +1443,7 @@ class LocalThingsDiscovery
             $status = self::rawStatus();
             if (!is_array($job) || ($status['job_id'] ?? '') !== $jobId || empty($status['running'])
                 || !empty($status['claimed'])) {
-                throw new RuntimeException('Tâche de découverte absente, expirée ou déjà démarrée');
+                throw new RuntimeException(__('Tâche de découverte absente, expirée ou déjà démarrée', __FILE__));
             }
             $status['claimed'] = true;
             $status['worker_pid'] = getmypid();
@@ -1623,7 +1623,7 @@ class LocalThingsDiscovery
             $status = self::rawStatus();
             if (($status['job_id'] ?? '') !== self::$activeJob || empty($status['running'])
                 || !empty($status['stop_requested'])) {
-                throw new LocalThingsDiscoveryCancelled('Découverte arrêtée à la demande de l’utilisateur ou tâche expirée');
+                throw new LocalThingsDiscoveryCancelled(__('Découverte arrêtée à la demande de l’utilisateur ou tâche expirée', __FILE__));
             }
             if (time() - (int) ($status['heartbeat'] ?? 0) >= 2) {
                 $status['heartbeat'] = time();
@@ -1695,18 +1695,18 @@ class LocalThingsDiscovery
     {
         $directory = __DIR__ . '/../../data';
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
-            throw new RuntimeException('Répertoire privé de découverte inaccessible');
+            throw new RuntimeException(__('Répertoire privé de découverte inaccessible', __FILE__));
         }
         $handle = fopen($directory . '/discovery.lock', 'c');
         if ($handle === false) {
-            throw new RuntimeException('Verrou de découverte inaccessible');
+            throw new RuntimeException(__('Verrou de découverte inaccessible', __FILE__));
         }
         @chmod($directory . '/discovery.lock', 0600);
         try {
             $deadline = microtime(true) + 3;
             while (!flock($handle, LOCK_EX | LOCK_NB)) {
                 if (microtime(true) >= $deadline) {
-                    throw new RuntimeException('La découverte est occupée, réessayez dans quelques secondes');
+                    throw new RuntimeException(__('La découverte est occupée, réessayez dans quelques secondes', __FILE__));
                 }
                 usleep(10000);
             }

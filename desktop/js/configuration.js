@@ -172,5 +172,5 @@ function printPluginConfiguration() {
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", printPluginConfiguration);
 } else {
-  setTimeout(printPluginConfiguration, 100);
+  setTimeout(printPluginConfiguration, 200);
 }

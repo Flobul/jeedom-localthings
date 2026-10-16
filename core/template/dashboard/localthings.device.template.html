@@ -178,12 +178,6 @@
         }
         frame.addEventListener('pointerdown', bindSlider, {capture: true});
         frame.addEventListener('focusin', bindSlider);
-        if (typeof jQuery !== 'undefined') {
-            jQuery(frame).on('slide.localthingsValue slideStop.localthingsValue', function (event, ui) {
-                if (ui && typeof ui.value !== 'undefined') show(ui.value);
-                else if (typeof event.value !== 'undefined') show(event.value);
-            });
-        }
         var stateId = output.getAttribute('data-state-cmd_id');
         if (stateId && stateId !== '0') {
             jeedom.cmd.addUpdateFunction(stateId, function (options) {

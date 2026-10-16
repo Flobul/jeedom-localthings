@@ -1,0 +1,244 @@
+/**
+ * CSS du plugin LocalThings — Page de configuration.
+ */
+#configuration_plugin_localthings {
+    --localthings-accent: #3d7f74;
+    --localthings-accent-dark: #285d55;
+    --localthings-border: rgba(127, 127, 127, 0.22);
+    --localthings-surface: rgba(255, 255, 255, 0.84);
+    --localthings-text-soft: rgba(45, 55, 65, 0.72);
+}
+
+#configuration_plugin_localthings .localthings-config-page {
+    width: min(100%, 1320px);
+    margin: 0 auto;
+    padding: 10px 14px 28px;
+    box-sizing: border-box;
+}
+
+#configuration_plugin_localthings .localthings-config-hero {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px 28px;
+    align-items: center;
+    margin-bottom: 18px;
+    padding: 24px 28px;
+    border: 1px solid rgba(61, 127, 116, 0.28);
+    border-radius: 18px;
+    background: linear-gradient(125deg, #f7fbfa 0%, #e7f1ef 52%, #3d7f74 100%);
+    box-shadow: 0 8px 22px rgba(30, 60, 56, 0.1);
+}
+
+#configuration_plugin_localthings .localthings-config-identity {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+}
+
+#configuration_plugin_localthings .localthings-config-logo {
+    flex: 0 0 92px;
+    width: 92px;
+    height: 92px;
+}
+
+#configuration_plugin_localthings .localthings-config-logo img {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#configuration_plugin_localthings .localthings-config-eyebrow {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--localthings-accent-dark);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+#configuration_plugin_localthings .localthings-config-hero h2 {
+    margin: 0 0 6px;
+    color: #203b37;
+    font-size: 30px;
+    font-weight: 700;
+}
+
+#configuration_plugin_localthings .localthings-config-hero p {
+    max-width: 670px;
+    margin: 0;
+    color: #435a56;
+    font-size: 14px;
+}
+
+#configuration_plugin_localthings .localthings-config-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 7px;
+}
+
+#configuration_plugin_localthings .localthings-config-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.42);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #294740;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+#configuration_plugin_localthings .localthings-config-links {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#configuration_plugin_localthings .localthings-config-links .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 0 !important;
+    border-radius: 8px;
+    color: #fff !important;
+    box-shadow: none !important;
+}
+
+#configuration_plugin_localthings .localthings-config-link-documentation { background: #3d7f74 !important; }
+#configuration_plugin_localthings .localthings-config-link-changelog { background: #536b67 !important; }
+#configuration_plugin_localthings .localthings-config-link-community { background: #6250bb !important; }
+
+#configuration_plugin_localthings .localthings-config-notice {
+    margin: 0 0 12px;
+    border-radius: 10px;
+}
+
+#configuration_plugin_localthings .localthings-config-card {
+    margin-top: 16px;
+    overflow: hidden;
+    border: 1px solid var(--localthings-border);
+    border-radius: 14px;
+    background: var(--localthings-surface);
+    box-shadow: 0 5px 16px rgba(30, 45, 42, 0.07);
+}
+
+#configuration_plugin_localthings .localthings-config-card-header {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--localthings-border);
+    background: linear-gradient(90deg, rgba(61, 127, 116, 0.12), rgba(61, 127, 116, 0.025));
+}
+
+#configuration_plugin_localthings .localthings-config-card-header > i {
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: var(--localthings-accent);
+    color: #fff;
+    font-size: 18px;
+}
+
+#configuration_plugin_localthings .localthings-config-card-header h3 {
+    margin: 0 0 3px;
+    font-size: 17px;
+    font-weight: 650;
+}
+
+#configuration_plugin_localthings .localthings-config-card-header p {
+    margin: 0;
+    color: var(--localthings-text-soft);
+    font-size: 12px;
+}
+
+#configuration_plugin_localthings .localthings-config-card-body {
+    padding: 20px 18px 8px;
+}
+
+#configuration_plugin_localthings .control-label {
+    font-size: 14px;
+    font-weight: normal;
+}
+
+#configuration_plugin_localthings textarea[data-l1key="discovery_networks"] {
+    max-width: 420px;
+}
+
+#configuration_plugin_localthings #localthings-pem-panel textarea {
+    font-family: monospace;
+    resize: vertical;
+}
+
+[data-theme="core2019_Dark"] #configuration_plugin_localthings {
+    --localthings-border: rgba(255, 255, 255, 0.13);
+    --localthings-surface: rgba(38, 43, 47, 0.9);
+    --localthings-text-soft: rgba(255, 255, 255, 0.66);
+}
+
+[data-theme="core2019_Dark"] #configuration_plugin_localthings .localthings-config-hero {
+    border-color: rgba(106, 181, 169, 0.28);
+    background: linear-gradient(125deg, #252d2c 0%, #314641 58%, #285d55 100%);
+}
+
+[data-theme="core2019_Dark"] #configuration_plugin_localthings .localthings-config-eyebrow,
+[data-theme="core2019_Dark"] #configuration_plugin_localthings .localthings-config-hero h2,
+[data-theme="core2019_Dark"] #configuration_plugin_localthings .localthings-config-hero p {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="core2019_Dark"] #configuration_plugin_localthings .localthings-config-meta span {
+    border-color: rgba(255, 255, 255, 0.13);
+    background: rgba(20, 25, 24, 0.58);
+    color: rgba(255, 255, 255, 0.86);
+}
+
+[data-theme="core2019_Dark"] #configuration_plugin_localthings .control-label {
+    color: rgba(255, 255, 255, 0.87);
+}
+
+@media (max-width: 900px) {
+    #configuration_plugin_localthings .localthings-config-hero {
+        grid-template-columns: 1fr;
+    }
+
+    #configuration_plugin_localthings .localthings-config-meta {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 560px) {
+    #configuration_plugin_localthings .localthings-config-page {
+        padding: 6px 6px 20px;
+    }
+
+    #configuration_plugin_localthings .localthings-config-hero {
+        padding: 18px;
+        border-radius: 14px;
+    }
+
+    #configuration_plugin_localthings .localthings-config-logo {
+        flex-basis: 62px;
+        width: 62px;
+        height: 62px;
+        border-radius: 15px;
+    }
+
+    #configuration_plugin_localthings .localthings-config-hero h2 {
+        font-size: 23px;
+    }
+
+    #configuration_plugin_localthings .localthings-config-card-body {
+        padding: 16px 10px 5px;
+    }
+}

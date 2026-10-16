@@ -8,7 +8,7 @@ class LocalThingsDtlsProbe
     {
         $socket = stream_socket_server('udp://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND);
         if ($socket === false) {
-            throw new RuntimeException('Préparation de la sonde DTLS impossible');
+            throw new RuntimeException(__('Préparation de la sonde DTLS impossible', __FILE__));
         }
         $process = null;
         $pipes = array();
@@ -23,7 +23,7 @@ class LocalThingsDtlsProbe
                 array(0 => array('pipe', 'r'), 1 => array('file', '/dev/null', 'w'), 2 => array('file', '/dev/null', 'w')),
                 $pipes, null, null, array('bypass_shell' => true));
             if (!is_resource($process)) {
-                throw new RuntimeException('Démarrage de la sonde DTLS impossible');
+                throw new RuntimeException(__('Démarrage de la sonde DTLS impossible', __FILE__));
             }
             stream_set_blocking($socket, false);
             $deadline = microtime(true) + 2;
@@ -42,10 +42,10 @@ class LocalThingsDtlsProbe
                             return $packet;
                         }
                     }
-                    throw new RuntimeException('Premier ClientHello DTLS inattendu');
+                    throw new RuntimeException(__('Premier ClientHello DTLS inattendu', __FILE__));
                 }
             }
-            throw new RuntimeException('ClientHello DTLS non généré');
+            throw new RuntimeException(__('ClientHello DTLS non généré', __FILE__));
         } finally {
             fclose($socket);
             foreach ($pipes as $pipe) { fclose($pipe); }
@@ -63,7 +63,7 @@ class LocalThingsDtlsProbe
     public static function scan($host, $ports, $openssl, $timeout = 2.0, $psk = false)
     {
         if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-            throw new InvalidArgumentException('La sonde LocalThings attend une adresse IPv4');
+            throw new InvalidArgumentException(__('La sonde LocalThings attend une adresse IPv4', __FILE__));
         }
         $hello = self::clientHello($openssl, $psk);
         $sockets = $results = array();
@@ -187,7 +187,7 @@ class LocalThingsDtlsProbe
         $live = self::livePorts($results);
         if ($preferred !== null && in_array((int) $preferred, $live, true)) { return (int) $preferred; }
         if (count($live) === 1) { return $live[0]; }
-        if (count($live) > 1) { throw new RuntimeException('Plusieurs ports DTLS répondent : sélection ambiguë'); }
-        throw new RuntimeException('Aucun service DTLS acceptant un ClientHello initial détecté');
+        if (count($live) > 1) { throw new RuntimeException(__('Plusieurs ports DTLS répondent : sélection ambiguë', __FILE__)); }
+        throw new RuntimeException(__('Aucun service DTLS acceptant un ClientHello initial détecté', __FILE__));
     }
 }

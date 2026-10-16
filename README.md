@@ -1,10 +1,10 @@
 # LocalThings pour Jeedom
 
-[![License](https://img.shields.io/github/license/Flobul/Jeedom-LocalThings?style=flat-square)](LICENSE)
-[![Language](https://img.shields.io/github/languages/top/Flobul/Jeedom-LocalThings?style=flat-square)](https://github.com/Flobul/Jeedom-LocalThings)
-[![Last commit](https://img.shields.io/github/last-commit/Flobul/Jeedom-LocalThings?style=flat-square)](https://github.com/Flobul/Jeedom-LocalThings/commits)
-[![Open issues](https://img.shields.io/github/issues/Flobul/Jeedom-LocalThings?style=flat-square)](https://github.com/Flobul/Jeedom-LocalThings/issues)
-[![Open pull requests](https://img.shields.io/github/issues-pr/Flobul/Jeedom-LocalThings?style=flat-square)](https://github.com/Flobul/Jeedom-LocalThings/pulls)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)](https://github.com/Flobul/jeedom-localthings/blob/HEAD/LICENSE)
+[![Language](https://img.shields.io/badge/Language-PHP-informational?style=flat-square)](https://github.com/Flobul/jeedom-localthings)
+[![Last commit](https://img.shields.io/badge/Last_commit-03/10/2026-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/commits)
+[![Open issues](https://img.shields.io/badge/Open_issues-0-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/issues)
+[![Open pull requests](https://img.shields.io/badge/Open_pull_requests-0-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/pulls)
 
 Plugin Jeedom de contrôle local des appareils Samsung compatibles avec
 LocalThings. Les échanges se font directement sur le réseau local en

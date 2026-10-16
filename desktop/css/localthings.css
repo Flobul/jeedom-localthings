@@ -27,3 +27,8 @@
     margin-bottom: 8px;
   }
 }
+
+/* ===== Dark theme (main page) ===== */
+[data-theme="core2019_Dark"] #div_localthings .localthings-discovery-bar .progress {
+  background: rgba(255, 255, 255, 0.08);
+}
