@@ -1,10 +1,10 @@
 # LocalThings pour Jeedom
 
-[![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)](https://github.com/Flobul/jeedom-localthings/blob/HEAD/LICENSE)
-[![Language](https://img.shields.io/badge/Language-PHP-informational?style=flat-square)](https://github.com/Flobul/jeedom-localthings)
-[![Last commit](https://img.shields.io/badge/Last_commit-03/10/2026-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/commits)
-[![Open issues](https://img.shields.io/badge/Open_issues-0-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/issues)
-[![Open pull requests](https://img.shields.io/badge/Open_pull_requests-0-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/pulls)
+[![Licence](https://img.shields.io/badge/Licence-GPL--3.0-blue?style=flat-square)](https://github.com/Flobul/jeedom-localthings/blob/HEAD/LICENSE)
+[![Langage](https://img.shields.io/badge/Langage-PHP-informational?style=flat-square)](https://github.com/Flobul/jeedom-localthings)
+[![Dernière mise à jour](https://img.shields.io/badge/Derniere_mise_a_jour-03/10/2026-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/commits)
+[![Tickets ouverts](https://img.shields.io/badge/Tickets_ouverts-0-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/issues)
+[![Demandes de fusion ouvertes](https://img.shields.io/badge/Demandes_de_fusion_ouvertes-0-brightgreen?style=flat-square)](https://github.com/Flobul/jeedom-localthings/pulls)
 
 Plugin Jeedom de contrôle local des appareils Samsung compatibles avec
 LocalThings. Les échanges se font directement sur le réseau local en
@@ -358,11 +358,11 @@ propriétaire ou administrateur.
 
 ## Licences
 
-Le plugin est distribué sous AGPL-3.0-or-later. Le comportement protocolaire
+Le plugin est distribué sous GPL-3.0-or-later. Le comportement protocolaire
 est adapté des travaux de [mbillow/localthings](https://github.com/mbillow/localthings)
 et [QuiteYellow/SmartThings-Local](https://github.com/QuiteYellow/SmartThings-Local), sous
 licence MIT ; les textes correspondants sont conservés dans
-`resources/attributions/`.
+`docs/attributions/`.
 
 ### Climatisations, kit Wi-Fi MIM-H04EN et PAC EHS : état de validation
 
@@ -416,3 +416,11 @@ Le plugin ne réinitialise pas l’appareil et ne modifie ni ses propriétaires,
 ni ses clés, ni ses ACL. Il n’implémente pas encore l’association OwnerPSK.
 Le modèle exact et un parcours d’autorisation constructeur validé pour celui-ci
 sont nécessaires pour aller au-delà des ressources déjà accessibles.
+
+---
+
+<p align="center">
+  <a href="https://github.com/sponsors/Flobul">
+    <img src="https://img.shields.io/badge/Sponsoriser%20ce%20projet-%E2%9D%A4-EA4AAA?style=for-the-badge&logo=githubsponsors" alt="Sponsoriser ce projet sur GitHub">
+  </a>
+</p>

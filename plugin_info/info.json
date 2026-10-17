@@ -12,7 +12,7 @@
 	},
 	"installation": "Installez les dépendances, configurez les certificats LocalThings puis lancez une découverte du réseau. Les requêtes sont réalisées directement en PHP par les crons et les commandes Jeedom. Les appareils doivent exposer un service CoAP-DTLS sur un port annoncé par OCF ou dans la plage UDP standard 5684/49152 à 49160.",
 	"utilization": "La synchronisation crée un équipement par appareil détecté. Les commandes sont construites à partir des ressources et capacités réellement annoncées par chaque appareil.",
-	"licence": "AGPL",
+	"licence": "GPL-3.0",
 	"author": "DomoFlo1",
 	"require": "4.4",
 	"os": {
