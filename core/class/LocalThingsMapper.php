@@ -235,6 +235,7 @@ class LocalThingsMapper
         $this->appendCycleEntity($resources, $entities, $states);
         $this->appendOperationalEntities($resources, $entities, $states);
         $this->appendAirQualityEntities($resources, $entities, $states);
+        $this->appendTemperatureEntities($resources, $entities, $states);
         $this->appendMaintenanceSummary($resources, $entities, $states);
         $this->ensureUniqueEntityNames($entities);
         return array('entities' => $entities, 'states' => $states);
@@ -300,6 +301,99 @@ class LocalThingsMapper
     }
 
     /**
+     * Extrait la température courante et la consigne du tableau Samsung.
+     *
+     * Les climatiseurs TP2X ne publient pas toujours les ressources OCF
+     * `/temperature/current/0` et `/temperature/desired/0`. Leur unique source
+     * est alors `/temperatures/vs/0`, dont chaque zone est décrite dans
+     * `x.com.samsung.da.items`.
+     *
+     * @param array<string,array<string,mixed>> $resources Ressources courantes.
+     * @param array<int,array<string,mixed>> $entities Entités complétées.
+     * @param array<string,mixed> $states États complétés.
+     * @return void
+     */
+    private function appendTemperatureEntities($resources, &$entities, &$states)
+    {
+        $href = '/temperatures/vs/0';
+        $items = $resources[$href]['x.com.samsung.da.items'] ?? array();
+        if (!is_array($items)) {
+            return;
+        }
+        foreach ($items as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $id = (string) ($item['x.com.samsung.da.id'] ?? $index);
+            $description = trim((string) ($item['x.com.samsung.da.description'] ?? ''));
+            $unit = $this->normalizeUnit($item['x.com.samsung.da.unit'] ?? 'Celsius') ?: '°C';
+            $suffix = $description !== '' && strcasecmp($description, 'Temperature') !== 0
+                ? ' - ' . $description
+                : '';
+
+            $current = $item['x.com.samsung.da.current'] ?? null;
+            if (is_numeric($current)) {
+                $current = $current + 0;
+                $currentKey = $this->entityKey($href, 'temperatureItem.' . $id . '.current');
+                $entities[] = array(
+                    'key' => $currentKey,
+                    'name' => __('Température actuelle', __FILE__) . $suffix,
+                    'platform' => 'sensor',
+                    'type' => 'info',
+                    'subtype' => 'numeric',
+                    'unit' => $unit,
+                    'category' => '',
+                    'value' => $current,
+                    'options' => array(),
+                    'actions' => array(),
+                );
+                $states[$currentKey] = $current;
+            }
+
+            $desired = $item['x.com.samsung.da.desired'] ?? null;
+            $minimum = $item['x.com.samsung.da.minimum'] ?? null;
+            $maximum = $item['x.com.samsung.da.maximum'] ?? null;
+            if (!is_numeric($desired)) {
+                continue;
+            }
+            $desired = $desired + 0;
+            $desiredKey = $this->entityKey($href, 'temperatureItem.' . $id . '.desired');
+            $actions = array();
+            if (is_numeric($minimum) && is_numeric($maximum)) {
+                $step = $item['x.com.samsung.da.increment'] ?? 1;
+                $recipe = array(
+                    'href' => $href,
+                    'field' => 'x.com.samsung.da.items',
+                    'encoding' => 'temperature_item',
+                    'item_id' => $id,
+                    'min' => $minimum + 0,
+                    'max' => $maximum + 0,
+                    'step' => is_numeric($step) ? $step + 0 : 1,
+                );
+                $action = $this->valueAction('set', __('Régler', __FILE__), 'slider', $recipe);
+                $action['min'] = $minimum + 0;
+                $action['max'] = $maximum + 0;
+                $action['step'] = is_numeric($step) ? $step + 0 : 1;
+                $action['unit'] = $unit;
+                $actions[] = $action;
+            }
+            $entities[] = array(
+                'key' => $desiredKey,
+                'name' => __('Température de consigne', __FILE__) . $suffix,
+                'platform' => count($actions) > 0 ? 'slider' : 'sensor',
+                'type' => 'info',
+                'subtype' => 'numeric',
+                'unit' => $unit,
+                'category' => '',
+                'value' => $desired,
+                'options' => array(),
+                'actions' => $actions,
+            );
+            $states[$desiredKey] = $desired;
+        }
+    }
+
+    /**
      * Construit le chemin et le corps CBOR correspondant à une action Jeedom.
      *
      * @param array<string,mixed> $recipe Recette d'écriture générée au mapping.
@@ -332,6 +426,51 @@ class LocalThingsMapper
                 break;
             case 'mode_list':
                 $bodyValue = array($value);
+                break;
+            case 'mode_option':
+                $modes = $representation['x.com.samsung.da.modes'] ?? array();
+                $supported = $representation['x.com.samsung.da.supportedOptions'] ?? array();
+                if (!is_array($modes) || !is_array($supported) || !in_array($value, $supported, true)) {
+                    throw new InvalidArgumentException(__('Programme Samsung invalide', __FILE__));
+                }
+                $bodyValue = array();
+                $replaced = false;
+                foreach ($modes as $mode) {
+                    if (in_array($mode, $supported, true)) {
+                        if (!$replaced) {
+                            $bodyValue[] = $value;
+                            $replaced = true;
+                        }
+                        continue;
+                    }
+                    $bodyValue[] = $mode;
+                }
+                if (!$replaced) {
+                    $bodyValue[] = $value;
+                }
+                break;
+            case 'temperature_item':
+                if (!is_numeric($value)) {
+                    throw new InvalidArgumentException(__('Valeur numérique invalide', __FILE__));
+                }
+                $numericValue = (float) $value;
+                $minimum = isset($recipe['min']) && is_numeric($recipe['min'])
+                    ? (float) $recipe['min']
+                    : null;
+                $maximum = isset($recipe['max']) && is_numeric($recipe['max'])
+                    ? (float) $recipe['max']
+                    : null;
+                if (($minimum !== null && $numericValue < $minimum) || ($maximum !== null && $numericValue > $maximum)) {
+                    throw new InvalidArgumentException(__('Température de consigne hors limites', __FILE__));
+                }
+                $step = isset($recipe['step']) && is_numeric($recipe['step']) && (float) $recipe['step'] > 0
+                    ? (float) $recipe['step']
+                    : 1.0;
+                $quantized = round(round($numericValue / $step) * $step, 2);
+                $bodyValue = array(array(
+                    'x.com.samsung.da.id' => (string) ($recipe['item_id'] ?? '0'),
+                    'x.com.samsung.da.desired' => (string) ($quantized + 0),
+                ));
                 break;
             case 'integer':
                 if (!is_numeric($value)) {
@@ -484,9 +623,17 @@ class LocalThingsMapper
 
         $options = $this->optionsFor($field, $value, $representation);
         if (count($options) > 0 && $this->isWritableOptionField($href, $field)) {
-            $recipe['encoding'] = is_array($value) && strpos($href, '/mode/') !== false
-                ? 'mode_list'
-                : 'same';
+            if (
+                is_array($value)
+                && isset($representation['x.com.samsung.da.supportedOptions'])
+                && is_array($representation['x.com.samsung.da.supportedOptions'])
+            ) {
+                $recipe['encoding'] = 'mode_option';
+            } else {
+                $recipe['encoding'] = is_array($value) && strpos($href, '/mode/') !== false
+                    ? 'mode_list'
+                    : 'same';
+            }
             $actions[] = $this->valueAction(
                 'set',
                 __('Choisir', __FILE__),
@@ -1049,6 +1196,13 @@ class LocalThingsMapper
     private function optionsFor($field, $value, $representation)
     {
         $candidates = array();
+        if (
+            ($field === 'x.com.samsung.da.modes' || $field === 'modes')
+            && is_array($value)
+            && isset($representation['x.com.samsung.da.supportedOptions'])
+        ) {
+            $candidates[] = 'x.com.samsung.da.supportedOptions';
+        }
         if ($this->endsWith($field, '.modes')) {
             $candidates[] = substr($field, 0, -6) . '.supportedModes';
         }
@@ -1151,6 +1305,20 @@ class LocalThingsMapper
             'warm' => __('Chaud', __FILE__),
             'hot' => __('Très chaud', __FILE__),
             'extrahot' => __('Très chaud', __FILE__),
+            'cv_fdr_wine' => __('Vin', __FILE__),
+            'cv_fdr_deli' => __('Charcuterie', __FILE__),
+            'cv_fdr_beverage' => __('Boissons', __FILE__),
+            'cv_fdr_meat' => __('Viande', __FILE__),
+            'cv_ttype_rf9000a_freeze' => __('Congélation', __FILE__),
+            'cv_ttype_rf9000a_softfreeze' => __('Congélation douce', __FILE__),
+            'cv_ttype_rf9000a_meat_fish' => __('Viandes et poissons', __FILE__),
+            'cv_ttype_rf9000a_fruit_veggies' => __('Fruits et légumes', __FILE__),
+            'cv_ttype_rf9000a_beverage' => __('Boissons', __FILE__),
+            'sp_ttype_beer_drinks' => __('Bières et boissons', __FILE__),
+            'sp_ttype_wine_dessert' => __('Vins et desserts', __FILE__),
+            'fdr_wine' => __('Vin', __FILE__),
+            'fdr_deli' => __('Charcuterie', __FILE__),
+            'fdr_drinks' => __('Boissons', __FILE__),
         );
         return $labels[$normalized] ?? (string) $value;
     }
@@ -1214,10 +1382,12 @@ class LocalThingsMapper
         ) {
             return true;
         }
+        if (strpos($href, '/specialzone/') !== false) {
+            return $field === 'roomDesiredMode';
+        }
         return strpos($field, 'modes') !== false
             || in_array($field, array('mode', 'speed', 'aiLevel', 'roomDesiredMode'), true)
-            || strpos($href, '/hood/fanspeed/') !== false
-            || strpos($href, '/specialzone/') !== false;
+            || strpos($href, '/hood/fanspeed/') !== false;
     }
 
     /**
@@ -1316,6 +1486,20 @@ class LocalThingsMapper
             && preg_match('/(?:^|\.)state$/i', $field)
         ) {
             return $this->operationalStateLabel($value);
+        }
+        if (
+            is_array($value)
+            && ($field === 'x.com.samsung.da.modes' || $field === 'modes')
+            && is_array($representation['x.com.samsung.da.supportedOptions'] ?? null)
+        ) {
+            foreach ($value as $mode) {
+                if (in_array($mode, $representation['x.com.samsung.da.supportedOptions'], true)) {
+                    return (string) $mode;
+                }
+            }
+        }
+        if (is_numeric($value) && preg_match('/cumulativeWater$/i', $field)) {
+            return ((float) $value) / 1000;
         }
         if (is_numeric($value) && preg_match('/cumulative(?:Power|Consumption)$/i', $field)) {
             $sourceUnit = $this->explicitUnit($field, $representation);
@@ -1601,6 +1785,8 @@ class LocalThingsMapper
             '/dnd/vs/0|x.com.samsung.da.endTime' => __('Fin du mode Ne pas déranger', __FILE__),
             '/mode/vs/0|x.com.samsung.da.modes' => __('Mode', __FILE__),
             '/mode/dhw/vs/0|x.com.samsung.da.modes' => __('Mode eau chaude', __FILE__),
+            '/water/consumption/vs/0|x.com.samsung.da.cumulativeWater' => __('Quantité d’eau consommée', __FILE__),
+            '/specialzone/one/vs/0|roomDesiredMode' => __('Programme de la zone boissons', __FILE__),
             '/power/dhw/vs/0|x.com.samsung.da.power' => __('Chauffe-eau', __FILE__),
             '/temperatures/indoor/vs/0|x.com.samsung.da.current' => __('Température intérieure', __FILE__),
             '/temperatures/indoor/vs/0|x.com.samsung.da.desired' => __('Consigne intérieure', __FILE__),
@@ -1921,6 +2107,9 @@ class LocalThingsMapper
         }
         if ($value !== null && !is_numeric($value)) {
             return '';
+        }
+        if (preg_match('/cumulativeWater$/i', $field)) {
+            return 'L';
         }
         $explicit = $this->explicitUnit($field, $representation);
         if (preg_match('/cumulative(?:Power|Consumption)/i', $field)) {

@@ -1,34 +1,43 @@
 # Changelog
 
-## 0.5.0
+## Non publié
 
+## Version 0.6.0 (21/10/2026)
+
+- Ajout des températures et consignes multi-zones Samsung publiées par la
+  ressource `/temperatures/vs/0`, avec des libellés adaptés aux compartiments.
+- Utilisation des options de programme réellement supportées par l’appareil,
+  conservation de leur ordre et écriture du tableau Samsung attendu.
+- Conversion de la consommation d’eau cumulée en litres et migration des
+  commandes existantes qui appliquaient encore une division par 1 000.
+- Ajout du réordonnancement par glisser-déposer des commandes et des valeurs des
+  listes de sélection dans la configuration des équipements.
+- Amélioration des libellés des modes Réfrigérateur et Congélateur.
+
+## Version 0.5.0 (16/10/2026)
 - Modernisation des pages de configuration et de santé, avec styles dédiés, présentation responsive et infobulles compatibles avec l’interface Jeedom.
 - Réorganisation de la documentation, ajout de captures d’écran et déclaration des liens de documentation et de changelog pour les canaux stable et bêta.
 - Mise en place d’une CI complète : syntaxes PHP et frontend, PHPStan avec le core Jeedom épinglé, validation Jeedom et i18n, audit des dépendances et détection des secrets.
 - Fiabilisation des lectures OCF multi-blocs et de la gestion des ressources après l’exécution d’une commande.
 - Correction des variables potentiellement indéfinies détectées par PHPStan dans le diagnostic OCF et le traitement des commandes.
 
-## 0.4.25
-
+## Version 0.4.25 (03/10/2026)
 - Une découverte peut désormais attendre jusqu’à six minutes lorsqu’un autre échange utilise déjà le même port UDP source, afin de ne plus interrompre les longues lectures OCF.
 - Les journaux distinguent l’attente normale d’un port occupé d’une impossibilité d’utiliser le verrou système.
 
-## 0.4.24
-
+## Version 0.4.24 (29/09/2026)
 - Consigne numérique visible sur les curseurs dashboard/mobile, mise à jour pendant le déplacement et par le retour d’état, sans envoi de commande supplémentaire.
 - Un seul sélecteur de mode principal pour les clims exposant /mode/0 et /mode/vs/0 ; les commandes restent disponibles aux scénarios. Correction de la valeur courante du mode standard.
 - Correction de Spi : « Ionisation (SPI) » remplace « Mode intelligent ». Libellé de mode stable sans suffixe de collision de nom.
 - Journal dédié localthings_ownerpsk pour le diagnostic PAC, sans désactiver les autres équipements.
 
-## 0.4.23
-
+## Version 0.4.23 (29/09/2026)
 - Diagnostic OwnerPSK depuis la découverte : état OCF et sonde PSK sans prise de propriété.
 - Import d’une clé existante, vérifiée sur une nouvelle session PSK avant enregistrement privé et utilisation en découverte, rafraîchissement et pilotage.
 - Transport DTLS PSK par tube privé (Python 3/libssl), sans secret dans les arguments, l’environnement ou les journaux. Vérification de l’UUID à chaque connexion.
 - Calcul OwnerPSK constructeur testé pour OTM 2/65282. L’autorisation Samsung et la transaction OTM du MIM-H04EN restent indisponibles : aucune association automatique ni écriture de sécurité.
 
-## 0.4.22
-
+## Version 0.4.22 (29/09/2026)
 - Comparaison des certificats sans équipement créé : détection préalable du port DTLS, sous verrou.
 - Seule une lecture protégée 2.05 est autorisée ; les refus CoAP et les erreurs réseau ne sont plus présentés comme des identités acceptées ou refusées.
 - Repli de lecture authentifiée via /oic/res et les ressources individuelles dans une nouvelle session quand /device/0 échoue. Aucun équipement créé sur les seules métadonnées.
@@ -37,8 +46,7 @@
 - Les unités techniques de température/humidité ne remplacent plus les mesures dans le widget.
 - Les réglages de climatisation conservent leurs noms distincts au lieu du libellé générique Mode.
 
-## 0.4.21
-
+## Version 0.4.21 (28/09/2026)
 - Nouveau diagnostic comparatif des certificats, depuis la barre de découverte
   de la page du plugin. Il essaie le profil AC14K_M, un profil autosigné
   conforme à la recette par défaut de SmartThings-Local, et une session sans
@@ -54,8 +62,7 @@
 - Le transport accepte une chaîne client absente lorsque le profil l'exige,
   sans que l'absence devienne silencieuse en production.
 
-## 0.4.20
-
+## Version 0.4.20 (28/09/2026)
 - Les modèles Samsung EHS sont reconnus
   avant le type générique `oic.d.airconditioner` : profil « Pompe à chaleur EHS ».
 - Le modèle enregistré reste utilisable pour le classement pendant les
@@ -66,8 +73,7 @@
   concernent le kit Wi-Fi MIM-H04EN de la PAC (attribution corrigée en 0.4.22). Une ressource `controllerstatus.ehs` ne suffit pas
   à classer un kit Wi-Fi comme PAC ni à conclure sur sa compatibilité.
 
-## 0.4.19
-
+## Version 0.4.19 (27/09/2026)
 - Un seul essai par endpoint DTLS prouvé : un échec du repli sans certificat
   ne relance plus le même certificat refusé ni les diagnostics publics.
 - Les lectures CoAP sont espacées entre ressources et retransmises avec le même
@@ -85,8 +91,7 @@
   ne constitue pas une procédure validée pour la PAC AE080BXYDGG. Aucun
   transfert de propriété automatique ni contournement des refus CoAP.
 
-## 0.4.18
-
+## Version 0.4.18 (24/09/2026)
 - Sélection du service DTLS d'après le port source réel de la réponse, conformément
   au fonctionnement des piles OCF Samsung : une requête adressée à `5684` peut être
   servie depuis le port éphémère `4915x` de l'appareil.
@@ -99,8 +104,7 @@
 - Correction de l'ordre de repli lorsqu'un port préféré doit précéder plusieurs
   endpoints réellement distincts.
 
-## 0.4.17
-
+## Version 0.4.17 (19/09/2026)
 - Correction d’une création abusive en lecture seule : les ressources réseau,
   points d’accès et auto-maintenance ne suffisent plus à valider un équipement.
   Une représentation de fonctionnement reconnue est nécessaire.
@@ -113,8 +117,7 @@
 - La PAC AE080BXYDGG accepte DTLS sans certificat client mais refuse encore la
   majorité des lectures. Le pilotage reste désactivé ; aucune réassociation automatique.
 
-## 0.4.16
-
+## Version 0.4.16 (19/09/2026)
 - Après une connexion DTLS sans certificat client réussie, la découverte poursuit
   la lecture des états : `/device/0`, puis les ressources annoncées individuellement
   si nécessaire, avec délais et nombre de requêtes limités.
@@ -130,8 +133,7 @@
   d’association ou transfert de propriété. Lecture réelle de la PAC AE080BXYDGG
   encore à valider avec les prochains logs utilisateur.
 
-## 0.4.15
-
+## Version 0.4.15 (18/09/2026)
 - Après un refus du certificat client (`unknown_ca`), la découverte tente
   automatiquement une session DTLS sans identité cliente, avec vérification de
   la chaîne du certificat serveur et paramètres cryptographiques Samsung.
@@ -151,8 +153,7 @@
   Une session de diagnostic réussie ne crée pas à elle seule un équipement
   pilotable. La compatibilité de la PAC AE080BXYDGG reste à valider sur appareil.
 
-## 0.4.14
-
+## Version 0.4.14 (18/09/2026)
 - Correction du diagnostic OCF public : un code de requête comme `0.01` (GET)
   n'est plus accepté comme une réponse, même lorsque le token correspond.
   Les messages concernés ne sont ni acquittés ni utilisés pour fixer le port
@@ -163,8 +164,7 @@
 - Cette correction ne résout pas le refus du certificat client `unknown_ca`
   observé sur la PAC Samsung AE080BXYDGG.
 
-## 0.4.13
-
+## Version 0.4.13 (17/09/2026)
 - Découverte des ports DTLS annoncés par `/oic/res` sur UDP `5683`, y compris
   hors de la plage habituelle. Seules les adresses IPv4 correspondant à l'appareil
   interrogé sont retenues ; les endpoints IPv6 non pris en charge sont signalés.
@@ -183,8 +183,7 @@
   n'ajoute pas le transfert de propriété OCF ni OwnerPSK, et ne garantit pas
   encore la prise en charge de la PAC Samsung AE080BXYDGG.
 
-## 0.4.12
-
+## Version 0.4.12 (17/09/2026)
 - Après un refus du certificat client (`unknown_ca`), lecture automatique des
   ressources OCF publiques `/oic/sec/doxm`, `/oic/sec/pstat` et `/oic/p` sur UDP
   `5683`, avec délai limité et prise en charge des réponses fragmentées.
@@ -194,8 +193,7 @@
 - Ce diagnostic ne modifie ni l'association SmartThings ni la configuration de
   l'appareil. Il ne résout pas à lui seul l'authentification de la PAC Samsung.
 
-## 0.4.11
-
+## Version 0.4.11 (16/09/2026)
 - État et paramètres de découverte transférés vers le cache Jeedom, avec
   expiration, protection contre les démarrages concurrents et récupération des
   tâches interrompues. Suppression de l'utilisation des fichiers de découverte
@@ -216,8 +214,7 @@
   la ligne. Une erreur PHP de la tâche de découverte est également journalisée
   et termine son état de progression.
 
-## 0.4.10
-
+## Version 0.4.10 (15/09/2026)
 - Gestion automatique des appareils qui répondent à la négociation DTLS depuis
   un autre port UDP, notamment après un contact sur `5684`. Le port source local
   et la vérification des certificats sont conservés. Le port de réponse est
@@ -229,15 +226,13 @@
   l'appareil : la correction du transport ne garantit pas l'authentification
   ni la présence des ressources LocalThings.
 
-## 0.4.9
-
+## Version 0.4.9 (11/09/2026)
 - Ajout du port UDP `5684` à la découverte automatique et à l’ajout manuel,
   en complément des ports `49152-49160`.
 - Mise à jour des messages de découverte et de la documentation des ports
   pris en charge.
 
-## 0.4.8
-
+## Version 0.4.8 (22/08/2026)
 - Prise en compte du niveau de log Jeedom par le démon persistant sans
   redémarrage manuel, grâce au rechargement de la configuration à chaque
   passage de la boucle de rafraîchissement.
@@ -249,8 +244,7 @@
   l’appareil publie simultanément les ressources opérationnelles propriétaire
   et OCF standard.
 
-## 0.4.7
-
+## Version 0.4.7 (19/08/2026)
 - Ajout d’une PHPDoc complète sur les classes, méthodes et fonctions PHP afin
   d’expliciter les contrats internes, les formats échangés et les effets de bord.
 - Allègement du rafraîchissement courant : les ressources OCF d’identité ne
@@ -271,8 +265,7 @@
 - Ajout d’une validation GitHub PHP, JSON, Bash, cohérence de version et
   absence de fichiers système indésirables dans les livraisons.
 
-## 0.4.6
-
+## Version 0.4.6 (16/08/2026)
 - Séparation du rafraîchissement automatique en deux intervalles : un pour
   les appareils en ligne et un pour les appareils hors ligne.
 - Sélection dynamique de la cadence pour chaque équipement selon le résultat
@@ -293,8 +286,7 @@
 - Suppression des doublons autour des curseurs, de l’historique et des mises à
   jour de commandes au profit des mécanismes fournis par le core Jeedom.
 
-## 0.4.5
-
+## Version 0.4.5 (15/08/2026)
 - Harmonisation de la page de configuration avec les autres plugins Jeedom :
   branche, source, version installée et accès directs à la documentation, au
   changelog et au Community.
@@ -317,8 +309,7 @@
   tâche cron Jeedom en mode démon, tout en conservant les intervalles en
   minutes existants.
 
-## 0.4.4
-
+## Version 0.4.4 (15/08/2026)
 - Correction des actions Samsung : suppression de la relecture prématurée qui
   pouvait provoquer le retour immédiat à l'ancienne valeur, puis vérification
   unique après la fenêtre de stabilisation de l'appareil.
@@ -339,15 +330,13 @@
   des commandes, avec compléments anglais, allemand et espagnol.
 - Exclusion des tests des archives installées dans Jeedom.
 
-## 0.4.3
-
+## Version 0.4.3 (15/08/2026)
 - Ouverture de l'historique Jeedom au clic sur les informations numériques
   historisées.
 - Remplacement du contenu brut de la page Informations par une sélection de
   données secondaires pertinentes, sans doublon avec les autres pages.
 
-## 0.4.2
-
+## Version 0.4.2 (15/08/2026)
 - Alignement des icônes de santé et de rafraîchissement du bandeau
   `.widget-name` sur les widgets SmartThings.
 - Remplacement des liens d'onglets par des boutons ciblés afin d'éviter tout
@@ -359,8 +348,7 @@
 - Simplification de la consommation aux valeurs utiles, conversion en kWh et
   neutralisation des puissances négatives non exploitables.
 
-## 0.4.1
-
+## Version 0.4.1 (15/08/2026)
 - Remplacement du bandeau LocalThings par le bandeau natif Jeedom
   `.widget-name`.
 - Allègement de la page principale à trois états utiles au maximum, aux
@@ -370,8 +358,7 @@
 - Simplification des libellés d'état et de consommation générés par le
   mappeur.
 
-## 0.4.0
-
+## Version 0.4.0 (15/08/2026)
 - Ajout d’un widget LocalThings adaptatif pour le dashboard et l’affichage
   mobile, avec une présentation et une organisation propres à chaque famille
   d’appareils.
@@ -382,8 +369,7 @@
 - Ajout du contrôle local de l’option Add Wash lorsqu’elle est annoncée comme
   modifiable par l’appareil.
 
-## 0.3.0
-
+## Version 0.3.0 (15/08/2026)
 - Ajout d’une commande action `Rafraîchir` sur chaque équipement.
 - Ajout des sélecteurs locaux de température de lavage, vitesse d’essorage et
   nombre de rinçages selon les valeurs réellement annoncées par l’appareil.
@@ -394,8 +380,7 @@
 - Suppression ciblée des doublons Samsung lorsque la ressource OCF standard est
   disponible.
 
-## 0.2.1
-
+## Version 0.2.1 (15/08/2026)
 - Exploration exhaustive des ports UDP `49152-49160` lors d’un ajout manuel.
 - Prise en compte des appareils présents dans la table ARP même lorsqu’ils
   ignorent les requêtes ping.
@@ -404,8 +389,7 @@
 - Ajout de diagnostics OpenSSL exploitables sans exposer les certificats ni
   les clés privées.
 
-## 0.2.0
-
+## Version 0.2.0 (15/08/2026)
 - Remplacement intégral du service externe par des classes PHP.
 - Ajout des codecs CBOR et CoAP et du client DTLS piloté par OpenSSL.
 - Découverte réseau asynchrone au moyen d'une tâche PHP CLI.
@@ -413,8 +397,7 @@
 - Suppression de l'environnement virtuel et de toutes les dépendances
   applicatives externes.
 
-## 0.1.0
-
+## Version 0.1.0 (14/08/2026)
 - Première version du plugin LocalThings.
 - Découverte IPv4 asynchrone et ajout manuel par adresse.
 - Sessions locales CoAP sur DTLS et génération du profil de certificat

@@ -21,7 +21,7 @@ require_once __DIR__ . '/LocalThingsCertificateDiagnostic.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.5.0';
+    public static $_pluginVersion = '0.6.0';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
 
     /**
@@ -577,6 +577,42 @@ class localthings extends eqLogic
     }
 
     /**
+     * Conserve l’ordre choisi par l’utilisateur pour une liste Jeedom.
+     *
+     * Les libellés et les valeurs disponibles restent pilotés par l’appareil :
+     * les options disparues sont retirées et les nouvelles sont ajoutées à la fin.
+     *
+     * @param string $stored Liste actuellement enregistrée.
+     * @param string $generated Liste fraîchement annoncée par l’appareil.
+     * @return string
+     */
+    private static function mergeListValueOrder($stored, $generated)
+    {
+        $generatedEntries = array();
+        foreach (array_filter(explode(';', (string) $generated), 'strlen') as $entry) {
+            $parts = explode('|', $entry, 2);
+            $generatedEntries[(string) $parts[0]] = $entry;
+        }
+        if (count($generatedEntries) === 0) {
+            return '';
+        }
+
+        $ordered = array();
+        foreach (array_filter(explode(';', (string) $stored), 'strlen') as $entry) {
+            $parts = explode('|', $entry, 2);
+            $value = (string) $parts[0];
+            if (isset($generatedEntries[$value])) {
+                $ordered[] = $generatedEntries[$value];
+                unset($generatedEntries[$value]);
+            }
+        }
+        foreach ($generatedEntries as $entry) {
+            $ordered[] = $entry;
+        }
+        return implode(';', $ordered);
+    }
+
+    /**
      * Synchronise les commandes Jeedom gérées avec les entités du mappeur.
      *
      * @param localthings $eqLogic Équipement concerné.
@@ -621,6 +657,16 @@ class localthings extends eqLogic
             $info->setConfiguration('entityKey', $entityKey);
             $info->setConfiguration('platform', (string) ($entity['platform'] ?? ''));
             $info->setConfiguration('entityCategory', (string) ($entity['category'] ?? ''));
+            if (stripos($entityKey, 'cumulativeWater') !== false) {
+                $calculation = preg_replace(
+                    '/\s+/',
+                    '',
+                    (string) $info->getConfiguration('calculValueOffset', '')
+                );
+                if (in_array(strtolower($calculation), array('value/1000', '#value#/1000'), true)) {
+                    $info->setConfiguration('calculValueOffset', '');
+                }
+            }
             $info->save();
 
             foreach (($entity['actions'] ?? array()) as $action) {
@@ -681,7 +727,12 @@ class localthings extends eqLogic
                         $optionLabel = str_replace(array(';', '|'), '', (string) $optionLabel);
                         $values[] = $optionValue . '|' . $optionLabel;
                     }
-                    $command->setConfiguration('listValue', implode(';', $values));
+                    $generatedListValue = implode(';', $values);
+                    $storedListValue = (string) $command->getConfiguration('listValue', '');
+                    $command->setConfiguration(
+                        'listValue',
+                        self::mergeListValueOrder($storedListValue, $generatedListValue)
+                    );
                 } else {
                     $command->setConfiguration('listValue', '');
                 }

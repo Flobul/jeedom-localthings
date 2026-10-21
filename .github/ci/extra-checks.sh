@@ -8,3 +8,5 @@ class_version="$(sed -n "s/.*_pluginVersion = '\([^']*\)'.*/\1/p" core/class/loc
 test -n "$info_version"
 test "$info_version" = "$class_version"
 test -z "$(git ls-files | grep -E '(^|/)\.DS_Store$' || true)"
+python3 .github/ci/test_release_guard.py
+python3 .github/ci/test_release_workflow.py

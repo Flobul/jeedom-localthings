@@ -356,12 +356,72 @@
   });
 })();
 
+function initCommandOrdering(tbody) {
+  if (!tbody || tbody.dataset.localthingsSortable === "1" || typeof Sortable === "undefined") return;
+  tbody.dataset.localthingsSortable = "1";
+  new Sortable(tbody, {
+    animation: 150,
+    draggable: ".cmd",
+    handle: ".localthings-cmd-order-handle",
+    onEnd: function (event) {
+      event.item.querySelector(".cmdAttr")?.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+  });
+}
+
+function renderSelectValueOrder(row) {
+  const input = row.querySelector('.cmdAttr[data-l1key="configuration"][data-l2key="listValue"]');
+  const list = row.querySelector(".localthings-select-values");
+  if (!input || !list) return;
+
+  list.textContent = "";
+  input.value.split(";").filter(Boolean).forEach(function (entry) {
+    const separator = entry.indexOf("|");
+    const value = separator === -1 ? entry : entry.slice(0, separator);
+    const label = separator === -1 ? entry : entry.slice(separator + 1);
+    const item = document.createElement("li");
+    item.className = "localthings-select-value";
+    item.dataset.entry = entry;
+
+    const handle = document.createElement("i");
+    handle.className = "fas fa-grip-vertical localthings-select-value-handle";
+    handle.setAttribute("aria-hidden", "true");
+    item.appendChild(handle);
+
+    const text = document.createElement("span");
+    text.textContent = label === value ? label : label + " (" + value + ")";
+    item.appendChild(text);
+    list.appendChild(item);
+  });
+
+  if (list.dataset.localthingsSortable !== "1" && typeof Sortable !== "undefined") {
+    list.dataset.localthingsSortable = "1";
+    new Sortable(list, {
+      animation: 150,
+      draggable: ".localthings-select-value",
+      handle: ".localthings-select-value-handle",
+      onEnd: function () {
+        input.value = Array.from(list.children).map(function (item) {
+          return item.dataset.entry;
+        }).join(";");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+    });
+  }
+  if (input.dataset.localthingsOrderListener !== "1") {
+    input.dataset.localthingsOrderListener = "1";
+    input.addEventListener("change", function () {
+      renderSelectValueOrder(row);
+    });
+  }
+}
+
 function addCmdToTable(_cmd) {
   if (!isset(_cmd)) _cmd = { configuration: {} };
   if (!isset(_cmd.configuration)) _cmd.configuration = {};
 
   let html = '<tr class="cmd" data-cmd_id="' + init(_cmd.id) + '">';
-  html += '<td class="hidden-xs"><span class="cmdAttr" data-l1key="id"></span></td>';
+  html += '<td class="hidden-xs localthings-order-cell"><i class="fas fa-grip-vertical localthings-cmd-order-handle" data-title="{{Déplacer la commande}}"></i><span class="cmdAttr" data-l1key="id"></span></td>';
   html += '<td><div class="input-group">';
   html += '<input class="cmdAttr form-control input-sm roundedLeft" data-l1key="name">';
   html += '<span class="input-group-btn"><a class="btn btn-default btn-sm cmdAction roundedRight" data-l1key="chooseIcon" title="{{Choisir une icône}}"><i class="fas fa-icons"></i></a></span>';
@@ -380,6 +440,7 @@ function addCmdToTable(_cmd) {
   }
   if (init(_cmd.subType) === "select") {
     html += '<input class="cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="listValue" placeholder="{{Valeur|Libellé;...}}">';
+    html += '<ol class="localthings-select-values" data-title="{{Glissez les valeurs pour modifier leur ordre d’affichage}}"></ol>';
   }
   html += '</td>';
   html += '<td>' + (init(_cmd.type) === "info" ? '<span class="cmdAttr" data-l1key="htmlstate"></span>' : "") + '</td>';
@@ -394,7 +455,9 @@ function addCmdToTable(_cmd) {
   const holder = document.createElement("tbody");
   holder.innerHTML = html;
   const row = holder.firstElementChild;
-  document.querySelector("#table_cmd tbody").appendChild(row);
+  const tbody = document.querySelector("#table_cmd tbody");
+  tbody.appendChild(row);
+  initCommandOrdering(tbody);
   jeedom.eqLogic.buildSelectCmd({
     id: document.querySelector('.eqLogicAttr[data-l1key="id"]')?.jeeValue(),
     filter: { type: "info" },
@@ -405,6 +468,7 @@ function addCmdToTable(_cmd) {
       row.querySelector('.cmdAttr[data-l1key="value"]')?.insertAdjacentHTML("beforeend", result);
       row.setJeeValues(_cmd, ".cmdAttr");
       jeedom.cmd.changeType(row, init(_cmd.subType));
+      renderSelectValueOrder(row);
     },
   });
 }

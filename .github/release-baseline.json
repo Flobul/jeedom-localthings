@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "plugin_id": "localthings",
+  "class_file": "core/class/localthings.class.php",
+  "reference_version": "0.5.0",
+  "reference_commit": "1e7d262e7043bcc0597ed86c061589d7b093d6f3"
+}
