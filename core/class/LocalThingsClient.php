@@ -719,12 +719,7 @@ class LocalThingsDeviceClient
                 } catch (LocalThingsDiscoveryCancelled $error) {
                     throw $error;
                 } catch (Throwable $error) {
-                    $this->log('info', '[Discovery] Lecture /device/0 échouée ; nouvelle session avec le même certificat pour /oic/res et les états individuels');
-                    $session->close();
-                    $session = $this->createSession($host, (int) $port, false);
-                    $stage = 'négociation DTLS du repli authentifié';
-                    $session->connect($handshakeTimeout);
-                    $stage = 'lecture authentifiée des ressources individuelles';
+                    $this->log('info', '[Discovery] Lecture /device/0 échouée ; lecture authentifiée des ressources individuelles sur la même session');
                     $individualFallback = true;
                     $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0, true);
                 }

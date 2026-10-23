@@ -2,6 +2,13 @@
 
 ## Non publié
 
+## Version 0.6.1 (23/10/2026)
+- Correction d'une reconnexion DTLS intempestive : lorsqu'une lecture de
+  `/device/0` échoue, la session DTLS existante est réutilisée pour lire
+  `/oic/res` et les ressources individuelles, au lieu d'ouvrir une nouvelle
+  session qui déclenchait un second handshake refusé par certains appareils
+  Samsung (ex. sèche-linge).
+
 ## Version 0.6.0 (21/10/2026)
 
 - Ajout des températures et consignes multi-zones Samsung publiées par la

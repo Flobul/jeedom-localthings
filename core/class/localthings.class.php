@@ -21,7 +21,7 @@ require_once __DIR__ . '/LocalThingsCertificateDiagnostic.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.6.0';
+    public static $_pluginVersion = '0.6.1';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
 
     /**
