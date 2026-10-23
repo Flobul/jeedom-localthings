@@ -34,6 +34,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("git push --force", text)
         self.assertIn("CENTRAL_DISPATCH_ENABLED", text)
         self.assertIn("CENTRAL_DISPATCH_TOKEN", text)
+        self.assertIn('--header "Authorization: Bearer $CENTRAL_DISPATCH_TOKEN"', text)
+        self.assertNotIn("$CENTR...OKEN", text)
         self.assertIn("repos/Flobul/.jeedom/dispatches", text)
         self.assertIn("actions/upload-artifact@v6", text)
         self.assertNotIn("pull_request_target", text)
@@ -65,6 +67,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_release_guard_is_part_of_blocking_ci(self):
         text = (ROOT / ".github" / "ci" / "extra-checks.sh").read_text(encoding="utf-8")
         self.assertIn("test_release_guard.py", text)
+
+    def test_central_dispatch_targets_current_repository(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        config = json.loads((ROOT / ".github" / "ci" / "ci-config.json").read_text())
+        expected = config["plugin"]["repository"]
+        self.assertIn(f'"folder": "{expected}"', text)
 
 
 if __name__ == "__main__":
