@@ -8,6 +8,11 @@
   `/oic/res` et les ressources individuelles, au lieu d'ouvrir une nouvelle
   session qui déclenchait un second handshake refusé par certains appareils
   Samsung (ex. sèche-linge).
+- La fermeture de session DTLS envoie désormais un `close_notify` avant de
+  terminer le processus OpenSSL, pour que l'appareil libère la peer sans
+  attendre un timeout d'inactivité qui peut durer plusieurs minutes.
+- Une réponse CoAP complète présente dans le tampon de réception est rendue
+  avant de signaler l'échec de la session DTLS, au lieu d'être abandonnée.
 
 ## Version 0.6.0 (21/10/2026)
 

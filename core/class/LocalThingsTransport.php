@@ -1355,6 +1355,12 @@ class LocalThingsDtlsClient
                 }
             }
             if (!$this->isRunning()) {
+                // Un drain peut contenir une réponse authentifiée suivie d'un
+                // teardown ; rendre la trame complète avant de signaler l'échec.
+                $frame = $this->takeBufferedFrame(false);
+                if ($frame !== null) {
+                    return $frame;
+                }
                 throw new RuntimeException(__('Session DTLS interrompue : ', __FILE__) . $this->errorSummary());
             }
         }
@@ -1412,13 +1418,19 @@ class LocalThingsDtlsClient
             $this->relay->close();
             $this->relay = null;
         }
-        foreach ($this->pipes as $pipe) {
-            if (is_resource($pipe)) {
-                @fclose($pipe);
-            }
-        }
-        $this->pipes = array();
+        // Tenter un close_notify avant de tuer OpenSSL : l'appareil ne libère
+        // la peer DTLS que s'il reçoit l'alerte close_notify, et il n'a pas de
+        // timeout d'inactivité pour la réclamer. Fermer stdin permet à OpenSSL
+        // de sérialiser l'alerte avant toute terminaison.
         if (is_resource($this->process)) {
+            if (isset($this->pipes[0]) && is_resource($this->pipes[0])) {
+                @fclose($this->pipes[0]);
+                $this->pipes[0] = null;
+            }
+            $status = proc_get_status($this->process);
+            if ($status['running']) {
+                usleep(200000);
+            }
             $status = proc_get_status($this->process);
             if ($status['running']) {
                 @proc_terminate($this->process);
@@ -1431,6 +1443,12 @@ class LocalThingsDtlsClient
                     @proc_terminate($this->process, 9);
                 }
             }
+            foreach ($this->pipes as $pipe) {
+                if (is_resource($pipe)) {
+                    @fclose($pipe);
+                }
+            }
+            $this->pipes = array();
             @proc_close($this->process);
         }
         $this->process = null;
