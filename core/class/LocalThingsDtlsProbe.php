@@ -60,10 +60,13 @@ class LocalThingsDtlsProbe
     }
 
     /** Sonde les candidats en parallèle, retransmet à l'identique, n'émet jamais de cookie. */
-    public static function scan($host, $ports, $openssl, $timeout = 2.0, $psk = false)
+    public static function scan($host, $ports, $openssl, $timeout = 2.0, $psk = false, $bindHost = '0.0.0.0')
     {
         if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new InvalidArgumentException(__('La sonde LocalThings attend une adresse IPv4', __FILE__));
+        }
+        if (filter_var($bindHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new InvalidArgumentException(__('Adresse d’écoute UDP invalide', __FILE__));
         }
         $hello = self::clientHello($openssl, $psk);
         $sockets = $results = array();
@@ -71,7 +74,7 @@ class LocalThingsDtlsProbe
             foreach (array_slice(array_unique($ports), 0, 20) as $port) {
                 $port = (int) $port;
                 if ($port < 1 || $port > 65535) { continue; }
-                $socket = @stream_socket_server('udp://0.0.0.0:0', $errno, $error, STREAM_SERVER_BIND);
+                $socket = @stream_socket_server('udp://' . $bindHost . ':0', $errno, $error, STREAM_SERVER_BIND);
                 $results[$port] = array('kind' => 'no_response', 'attempts' => 0);
                 if ($socket === false) { $results[$port]['kind'] = 'socket_error'; continue; }
                 stream_set_blocking($socket, false);

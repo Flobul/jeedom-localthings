@@ -841,14 +841,17 @@ class LocalThingsUdpRelay
     private $ignored = 0;
 
     /** Initialise les deux sockets UDP, sans nouvelle dépendance ni service. */
-    public function __construct($host, $port, $localPort, $logger = null)
+    public function __construct($host, $port, $localPort, $logger = null, $bindHost = '0.0.0.0')
     {
+        if (filter_var($bindHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new InvalidArgumentException(__('Adresse d’écoute UDP invalide', __FILE__));
+        }
         $this->host = $host;
         $this->initialPort = $port;
         $this->remotePeer = $host . ':' . $port;
         $this->logger = is_callable($logger) ? $logger : null;
         try {
-            $this->network = $this->bind('0.0.0.0:' . $localPort);
+            $this->network = $this->bind($bindHost . ':' . $localPort);
             $this->loopback = $this->bind('127.0.0.1:0');
         } catch (Exception $exception) {
             $this->close();
