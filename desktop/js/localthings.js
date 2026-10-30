@@ -39,10 +39,13 @@
     const stopping = scanState.running && scanState.stop_requested;
     const icon = scan?.querySelector("i");
     const label = scan?.querySelector("span");
-    if (icon) icon.className = scanState.running ? "fas fa-spinner fa-spin" : "fas fa-satellite-dish";
-    if (label) label.textContent = stopping ? "{{Arrêt en cours…}}"
-      : scanState.running ? "{{Découverte en cours}}" : "{{Découvrir}}";
-    scan?.setAttribute("aria-busy", String(Boolean(scanState.running)));
+    const activeIcon = scanState.running ? "fas fa-stop-circle" : "fas fa-satellite-dish";
+    const activeLabel = scanState.running ? "{{Arrêter la découverte}}" : "{{Découvrir}}";
+    if (icon) icon.className = stopping ? "fas fa-spinner fa-spin" : activeIcon;
+    if (label) label.textContent = stopping ? "{{Arrêt en cours…}}" : activeLabel;
+    scan?.classList.toggle("localthings-discovery-stop", Boolean(scanState.running));
+    scan?.classList.toggle("logoPrimary", !scanState.running);
+    scan?.setAttribute("aria-busy", String(Boolean(stopping)));
     scan?.setAttribute("aria-disabled", String(scanBusy || Boolean(stopping)));
     const probe = document.getElementById("bt_probeLocalthings");
     if (probe) probe.disabled = certificateBusy || scanBusy || Boolean(scanState.running);
@@ -204,7 +207,11 @@
   root.addEventListener("click", function (event) {
     const scan = event.target.closest("#bt_scanLocalthings");
     if (scan) {
-      if (scanBusy) return;
+      if (scanBusy || scanState.stop_requested) return;
+      if (scanState.running) {
+        scanAction("stopScan", { job_id: scanState.job_id });
+        return;
+      }
       scanBusy = true;
       scanGeneration++;
       renderScan(scanState);
@@ -212,14 +219,9 @@
         scanBusy = false;
         renderScan(status);
         if (status.running) {
-          if (status.stop_requested) return;
-          scanBusy = true;
-          renderScan(status);
-          jeeDialog.confirm("{{Une découverte est déjà en cours. Voulez-vous l’arrêter ?}}", function (confirmed) {
-            scanBusy = false;
-            renderScan(scanState);
-            if (confirmed) scanAction("stopScan", { job_id: status.job_id });
-          });
+          // Un autre onglet a démarré la découverte : afficher d'abord l'action
+          // rouge. Seul un clic explicite sur celle-ci doit demander l'arrêt.
+          scheduleScan(1500);
         } else {
           scanAction("scan", {});
         }

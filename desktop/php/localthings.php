@@ -78,8 +78,20 @@ $eqLogics = eqLogic::byType($plugin->getId());
         <div class="eqLogicThumbnailContainer" id="localthings-device-list">
             <?php foreach ($eqLogics as $eqLogic) {
                 $opacity = $eqLogic->getIsEnable() ? '' : 'disableCard';
+                $connectedCmd = $eqLogic->getCmd('info', 'connected');
+                $connected = is_object($connectedCmd) && (int) $connectedCmd->execCmd() === 1;
+                $deviceType = trim((string) $eqLogic->getConfiguration('device_type', 'unknown'));
+                $host = trim((string) $eqLogic->getConfiguration('host', ''));
+                $port = (int) $eqLogic->getConfiguration('port', 0);
+                $endpoint = $host !== '' ? $host . ($port > 0 ? ':' . $port : '') : __('IP inconnue', __FILE__);
+                $cardTitle = ($connected ? __('Connecté', __FILE__) : __('Déconnecté', __FILE__))
+                    . ' <br> ' . __('Type', __FILE__) . ' : ' . ($deviceType !== '' ? $deviceType : __('inconnu', __FILE__))
+                    . ' <br> ' . __('IP', __FILE__) . ' : ' . $endpoint;
             ?>
-                <div class="eqLogicDisplayCard cursor <?php echo $opacity; ?>" data-eqLogic_id="<?php echo $eqLogic->getId(); ?>">
+                <div class="eqLogicDisplayCard cursor <?php echo $opacity; ?>"
+                     data-eqLogic_id="<?php echo $eqLogic->getId(); ?>"
+                     data-title="<?php echo htmlspecialchars($cardTitle, ENT_QUOTES, 'UTF-8'); ?>"
+                     tooltip="<?php echo htmlspecialchars($cardTitle, ENT_QUOTES, 'UTF-8'); ?>">
                     <img src="<?php echo $eqLogic->getImage(); ?>" alt="">
                     <br>
                     <span class="name"><?php echo $eqLogic->getHumanName(true, true); ?></span>

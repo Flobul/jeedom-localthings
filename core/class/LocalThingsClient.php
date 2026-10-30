@@ -38,6 +38,14 @@ class LocalThingsDeviceClient
     private $logger;
 
     /**
+     * Sessions DTLS détenues exclusivement par cette instance de client.
+     * Le démon conserve une seule instance pendant toute sa durée de vie.
+     *
+     * @var array<string,array{session:LocalThingsSession,last_used:float}>
+     */
+    private $sessionCache = array();
+
+    /**
      * Initialise le client avec ses dépendances réseau et de mapping.
      *
      * @param string $openssl Chemin du binaire OpenSSL.
@@ -306,7 +314,19 @@ class LocalThingsDeviceClient
     {
         $host = $this->validateHost($host);
         return $this->withHostLock($host, function () use ($host, $port, $knownDevice) {
-            return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
+            $readOnly = ($knownDevice['auth_mode'] ?? '') === self::AUTH_READ_ONLY;
+            $key = $this->sessionCacheKey($host, (int) $port, $readOnly);
+            $usedCachedSession = $this->cachedSession($key) !== null;
+            try {
+                return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
+            } catch (Throwable $error) {
+                if (!$usedCachedSession) {
+                    throw $error;
+                }
+                $this->log('info', '[Session] ' . $host . ':' . (int) $port
+                    . ' session maintenue invalide ; nouvelle négociation unique');
+                return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
+            }
         });
     }
 
@@ -354,9 +374,23 @@ class LocalThingsDeviceClient
             'info',
             sprintf(__('[Command] Connexion à %1$s:%2$d', __FILE__), $host, (int) $port)
         );
-        $session = $this->createSession($host, (int) $port);
+        $sessionKey = $this->sessionCacheKey($host, (int) $port, false);
+        $session = $this->cachedSession($sessionKey);
+        $sessionSource = $session === null ? 'new' : 'cached';
+        if ($session === null) {
+            $session = $this->createSession($host, (int) $port);
+        }
+        $this->log('info', '[Session] host=' . $host . ' port=' . (int) $port
+            . ' localPort=' . $session->localPort()
+            . ' source=' . $sessionSource . ' mode=' . $this->sessionAuthMode($host, false) . ' command=yes');
+        $keepAlive = false;
         try {
-            $session->connect(12.0);
+            if ($session->isConnected()) {
+                $this->log('info', '[Session] host=' . $host . ' port=' . (int) $port
+                    . ' négociation omise, session maintenue réutilisée pour la commande');
+            } else {
+                $session->connect(12.0);
+            }
             $resources = $this->readResources($session);
             $remoteControlEnabled = $this->mapper->remoteControlEnabled($resources);
             $this->log(
@@ -415,6 +449,7 @@ class LocalThingsDeviceClient
             }
             $resources[$href] = array_merge((array) ($resources[$href] ?? array()), $representation);
             $mapped = $this->mapper->map($resources);
+            $keepAlive = true;
             return array(
                 'success' => true,
                 'code' => LocalThingsCoap::formatCode($code),
@@ -423,8 +458,20 @@ class LocalThingsDeviceClient
                 'entities' => $mapped['entities'],
                 'states' => $mapped['states'],
             );
+        } catch (LocalThingsCommandRejectedException $exception) {
+            // Un refus métier n'invalide pas la session DTLS établie.
+            $keepAlive = $session->isConnected();
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->dropCachedSession($sessionKey);
+            throw $exception;
         } finally {
-            $session->close();
+            if ($keepAlive) {
+                $this->cacheSession($sessionKey, $session);
+            } else {
+                $this->dropCachedSession($sessionKey);
+                $session->close();
+            }
         }
     }
 
@@ -681,6 +728,89 @@ class LocalThingsDeviceClient
     }
 
     /**
+     * Clé d'indexation d'une session maintenue.
+     *
+     * @param string $host
+     * @param int $port
+     * @param bool $readOnly
+     * @return string
+     */
+    private function sessionAuthMode($host, $readOnly)
+    {
+        if ($readOnly) {
+            return self::AUTH_READ_ONLY;
+        }
+        return $this->ownerPskCredential($host) !== null ? 'owner_psk' : 'certificate';
+    }
+
+    private function sessionCacheKey($host, $port, $readOnly)
+    {
+        return $host . ':' . (int) $port . ':' . $this->sessionAuthMode($host, $readOnly);
+    }
+
+    /**
+     * Retourne une session maintenue encore valide, ou `null`.
+     *
+     * Une entrée dont le processus de transport n'est plus actif est oubliée.
+     *
+     * @param string $key
+     * @return LocalThingsSession|null
+     */
+    private function cachedSession($key)
+    {
+        if (!isset($this->sessionCache[$key])) {
+            return null;
+        }
+        $entry = $this->sessionCache[$key];
+        $session = $entry['session'];
+        if (!$session->isConnected()) {
+            unset($this->sessionCache[$key]);
+            $session->close();
+            return null;
+        }
+        return $session;
+    }
+
+    /** Mémorise une session pour les prochaines requêtes du démon. */
+    private function cacheSession($key, LocalThingsSession $session)
+    {
+        $existing = $this->sessionCache[$key]['session'] ?? null;
+        if ($existing !== null && $existing !== $session) {
+            $existing->close();
+        }
+        $this->sessionCache[$key] = array(
+            'session' => $session,
+            'last_used' => microtime(true),
+        );
+    }
+
+    /** Oublie une session sans la refermer une seconde fois. */
+    private function dropCachedSession($key)
+    {
+        unset($this->sessionCache[$key]);
+    }
+
+    /** Referme toutes les sessions détenues par ce client. */
+    public function closeSessions()
+    {
+        $closed = 0;
+        foreach ($this->sessionCache as $key => $entry) {
+            $session = $entry['session'];
+            if ($session instanceof LocalThingsSession) {
+                $session->close();
+                $closed++;
+            }
+            unset($this->sessionCache[$key]);
+        }
+        return $closed;
+    }
+
+    public function __destruct()
+    {
+        $this->closeSessions();
+    }
+
+    /**
      * Construit l'instantané métier d'un appareil à partir de ses ressources.
      *
      * @param string $host Adresse IPv4 validée.
@@ -688,6 +818,7 @@ class LocalThingsDeviceClient
      * @param float $handshakeTimeout Délai du handshake.
      * @param bool $includeIdentity Lit les ressources OCF d'identité pendant une découverte.
      * @param array<string,mixed> $knownDevice Métadonnées conservées lors d'un rafraîchissement léger.
+     * @param LocalThingsSession|null $connectedSession Session déjà établie par l'appelant.
      * @return array<string,mixed>
      */
     private function readSnapshot($host, $port, $handshakeTimeout, $includeIdentity = true, $knownDevice = array(), $connectedSession = null)
@@ -696,9 +827,32 @@ class LocalThingsDeviceClient
             throw new InvalidArgumentException(__('Port LocalThings invalide', __FILE__));
         }
         $readOnly = ($knownDevice['auth_mode'] ?? '') === self::AUTH_READ_ONLY;
-        $session = $connectedSession ?: $this->createSession($host, (int) $port, $readOnly);
+        $sessionKey = $this->sessionCacheKey($host, (int) $port, $readOnly);
+        $keepAlive = false;
+        if ($connectedSession !== null) {
+            $session = $connectedSession;
+            $sessionSource = 'reused';
+        } else {
+            $session = $this->cachedSession($sessionKey);
+            if ($session !== null) {
+                $sessionSource = 'cached';
+            } else {
+                $session = $this->createSession($host, (int) $port, $readOnly);
+                $sessionSource = 'new';
+            }
+            $keepAlive = true;
+        }
+        $this->log('info', '[Session] host=' . $host . ' port=' . (int) $port
+            . ' localPort=' . $session->localPort()
+            . ' source=' . $sessionSource
+            . ' mode=' . $this->sessionAuthMode($host, $readOnly));
+        $started = microtime(true);
         $stage = 'négociation DTLS';
         try {
+            if ($session->isConnected()) {
+                $this->log('info', '[Session] host=' . $host . ' port=' . (int) $port
+                    . ' négociation omise, session maintenue réutilisée');
+            } else {
             $this->log(
                 'debug',
                 sprintf(
@@ -709,8 +863,13 @@ class LocalThingsDeviceClient
                 )
             );
             $session->connect($handshakeTimeout);
+            $this->log('info', '[Refresh] host=' . $host . ' port=' . (int) $port
+                . ' localPort=' . $session->localPort()
+                . ' session_duration=' . $this->durationMs($started) . ' ms');
+            }
             $stage = $readOnly ? 'lecture des ressources OCF annoncées' : 'lecture CoAP /device/0';
             $individualFallback = false;
+            $resourceStart = microtime(true);
             if ($readOnly) {
                 $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0);
             } else {
@@ -724,6 +883,10 @@ class LocalThingsDeviceClient
                     $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0, true);
                 }
             }
+            $this->log('info', '[Refresh] host=' . $host . ' port=' . (int) $port
+                . ' stage=' . ($individualFallback ? 'individual_fallback' : 'direct')
+                . ' resources=' . count($resources)
+                . ' duration=' . $this->durationMs($resourceStart) . ' ms');
             $stage = 'identité et commandes';
             $identity = array();
             if ($includeIdentity) {
@@ -825,12 +988,22 @@ class LocalThingsDeviceClient
                 'states' => $mapped['states'],
                 'resources' => $resources,
             );
-        } catch (Exception $exception) {
+        } catch (Throwable $exception) {
             $this->log('info', '[Diagnostic] ' . $host . ':' . $port
                 . ' ; étape en échec=' . $stage . ' ; ' . $exception->getMessage());
+            if ($connectedSession === null) {
+                $this->dropCachedSession($sessionKey);
+            }
+            $keepAlive = false;
             throw $exception;
         } finally {
-            $session->close();
+            $this->log('info', '[Refresh] host=' . $host . ' port=' . (int) $port
+                . ' total_duration=' . $this->durationMs($started) . ' ms');
+            if ($keepAlive && $connectedSession === null) {
+                $this->cacheSession($sessionKey, $session);
+            } else {
+                $session->close();
+            }
         }
     }
 
@@ -1372,15 +1545,19 @@ class LocalThingsDiscovery
     }
 
     /** Prépare les paramètres en cache et lance un worker identifié par un jeton. */
-    public static function start($workerPath, $networks = array(), $hosts = array(), $logPath = null)
+    public static function start($workerPath, $networks = array(), $hosts = array(), $logPath = null, $leaseToken = '')
     {
         if (!function_exists('exec') || !function_exists('proc_open')) {
             throw new RuntimeException(__('exec et proc_open sont nécessaires à la découverte', __FILE__));
         }
+        $leaseToken = trim((string) $leaseToken);
+        if ($leaseToken !== '' && !preg_match('/^[a-f0-9]{48}$/D', $leaseToken)) {
+            throw new InvalidArgumentException(__('Bail de découverte invalide', __FILE__));
+        }
         $hosts = count($hosts) > 0 ? self::validateHosts($hosts) : array();
         $networks = count($hosts) === 0 ? self::validateNetworks($networks) : array();
         $php = self::phpCli();
-        return self::withStateLock(function () use ($workerPath, $networks, $hosts, $logPath, $php) {
+        return self::withStateLock(function () use ($workerPath, $networks, $hosts, $logPath, $php, $leaseToken) {
             if (!empty(self::recoverStatus()['running'])) {
                 throw new RuntimeException(__('Une découverte LocalThings est déjà en cours', __FILE__));
             }
@@ -1391,6 +1568,7 @@ class LocalThingsDiscovery
             self::storeStatus($status);
             $command = escapeshellarg($php) . ' ' . escapeshellarg((string) $workerPath)
                 . ' --job ' . escapeshellarg($jobId)
+                . ($leaseToken !== '' ? ' --lease ' . escapeshellarg($leaseToken) : '')
                 . ($logPath ? ' >> ' . escapeshellarg((string) $logPath) : ' > /dev/null')
                 . ' 2>&1 & echo $!';
             $output = array();

@@ -2,6 +2,18 @@
 
 ## Non publié
 
+## Version 0.7.0 (30/10/2026)
+
+- Un démon PHP unique détient désormais toutes les sessions DTLS et reçoit les rafraîchissements et commandes par une socket Unix privée ; un refresh manuel ou une commande ne peut plus invalider la session du polling.
+- La session DTLS reste ouverte et est réutilisée par les rafraîchissements et les commandes tant qu’elle répond ; une lecture échouée sur une session maintenue provoque une seule renégociation, tandis qu’un POST n’est jamais rejoué automatiquement.
+- La découverte suspend explicitement le propriétaire DTLS, ferme ses sessions puis lui rend la main à la fin ou après expiration du bail.
+- Les transports OpenSSL et OwnerPSK ferment explicitement leur session DTLS avant de terminer, et le mode OwnerPSK expose désormais correctement son état et son port source.
+- La fermeture d’un processus OpenSSL déjà terminé ne fait plus échouer le cron ou le démon avec une erreur `proc_close()`.
+- L’état du démon distingue maintenant un processus occupé d’un processus arrêté grâce au verrou, à la socket et au heartbeat ; une lecture DTLS longue ne déclenche plus de relancements concurrents ni de faux messages « ne répond pas après son lancement ».
+- Les listes de cycles ne sont plus fabriquées à partir du descripteur binaire Samsung `supportedOptions` : seules les valeurs explicitement annoncées par `editCourseList` deviennent pilotables, ce qui évite les POST acquittés mais ignorés comme `Course_DA`.
+- Pendant une découverte, l’action devient immédiatement « Arrêter la découverte » en rouge et permet d’interrompre le traitement en cours.
+- Les cartes des équipements affichent une infobulle condensée avec la connectivité, le type d’appareil et l’adresse IP/port.
+
 ## Version 0.6.1 (23/10/2026)
 - Correction d'une reconnexion DTLS intempestive : lorsqu'une lecture de
   `/device/0` échoue, la session DTLS existante est réutilisée pour lire

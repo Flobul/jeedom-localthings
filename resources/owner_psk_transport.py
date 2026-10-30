@@ -30,6 +30,7 @@ class Transport:
             'SSL_set_fd': (i, [p, i]), 'SSL_connect': (i, [p]),
             'SSL_get_error': (i, [p, i]), 'SSL_read': (i, [p, p, i]),
             'SSL_write': (i, [p, p, i]), 'SSL_pending': (i, [p]),
+            'SSL_shutdown': (i, [p]),
         }
         for name, (result, args) in signatures.items():
             fn = getattr(self.lib, name); fn.restype = result; fn.argtypes = args
@@ -102,7 +103,12 @@ class Transport:
             except TimeoutError: return None
 
     def close(self):
-        if self.ssl: self.lib.SSL_free(self.ssl); self.ssl = None
+        if self.ssl:
+            try:
+                self.lib.SSL_shutdown(self.ssl)
+            except Exception:
+                pass
+            self.lib.SSL_free(self.ssl); self.ssl = None
         if self.ctx: self.lib.SSL_CTX_free(self.ctx); self.ctx = None
         if self.sock: self.sock.close(); self.sock = None
 
@@ -127,6 +133,10 @@ def main():
             elif action == 'read':
                 data = transport.read(max(.01, min(30, float(request['timeout']))))
                 result = None if data is None else base64.b64encode(data).decode('ascii')
+            elif action == 'close':
+                if transport:
+                    transport.close()
+                    transport = None
             else: raise ValueError('invalid action')
             print(json.dumps({'ok': True, 'result': result}), flush=True)
     except Exception:

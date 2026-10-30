@@ -777,6 +777,25 @@ class LocalThingsSession
         $this->logger = is_callable($logger) ? $logger : null;
     }
 
+    /** Port UDP source du transport DTLS sous-jacent. */
+    public function localPort()
+    {
+        return $this->transport !== null ? $this->transport->localPort() : 0;
+    }
+
+    /**
+     * Indique si la session DTLS est établie et le processus OpenSSL actif.
+     *
+     * Permet d'omettre la négociation entre deux rafraîchissements lorsque
+     * la session maintenue est encore vivante.
+     *
+     * @return bool
+     */
+    public function isConnected()
+    {
+        return $this->transport !== null && $this->transport->isConnected();
+    }
+
     /**
      * Établit la connexion DTLS sous-jacente.
      *

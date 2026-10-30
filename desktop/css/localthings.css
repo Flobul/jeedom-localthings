@@ -1,3 +1,7 @@
+#div_localthings .localthings-discovery-stop {
+  color: #c9302c !important;
+}
+
 #div_localthings .localthings-discovery-bar {
   max-width: 760px;
   margin: 8px auto 22px;

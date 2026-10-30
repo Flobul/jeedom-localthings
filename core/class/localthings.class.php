@@ -15,14 +15,18 @@ require_once __DIR__ . '/LocalThingsMapper.php';
 require_once __DIR__ . '/LocalThingsWidget.php';
 require_once __DIR__ . '/LocalThingsClient.php';
 require_once __DIR__ . '/LocalThingsCertificateDiagnostic.php';
+require_once __DIR__ . '/LocalThingsDaemonClient.php';
+require_once __DIR__ . '/LocalThingsDaemon.php';
 
 /**
  * Représente un équipement LocalThings et son intégration au cycle de vie Jeedom.
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.6.1';
+    public static $_pluginVersion = '0.7.0';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
+    private static $daemonDeviceClient = null;
+    private static $discoveryLease = null;
 
     /**
      * Retourne le répertoire des ressources distribuées avec le plugin.
@@ -47,6 +51,43 @@ class localthings extends eqLogic
         }
         @chmod($path, 0700);
         return $path;
+    }
+
+    private static function pluginRoot()
+    {
+        return dirname(__DIR__, 2);
+    }
+
+    public static function daemonRuntimePath()
+    {
+        $path = rtrim((string) jeedom::getTmpFolder(__CLASS__), '/') . '/daemon';
+        if (!is_dir($path) && !mkdir($path, 0700, true) && !is_dir($path)) {
+            throw new RuntimeException(__('Création du répertoire du démon impossible', __FILE__));
+        }
+        @chmod($path, 0700);
+        return $path;
+    }
+
+    private static function daemonIpc($timeout = 45.0)
+    {
+        return new LocalThingsDaemonClient(self::daemonRuntimePath(), $timeout);
+    }
+
+    public static function enterDaemonMode()
+    {
+        if (!(self::$daemonDeviceClient instanceof LocalThingsDeviceClient)) {
+            self::$daemonDeviceClient = self::buildDeviceClient(__CLASS__);
+        }
+        return self::$daemonDeviceClient;
+    }
+
+    public static function leaveDaemonMode()
+    {
+        if (self::$daemonDeviceClient instanceof LocalThingsDeviceClient) {
+            self::$daemonDeviceClient->closeSessions();
+        }
+        self::$daemonDeviceClient = null;
+        self::$discoveryLease = null;
     }
 
     /**
@@ -89,7 +130,7 @@ class localthings extends eqLogic
      *
      * @return LocalThingsDeviceClient
      */
-    public static function deviceClient($logName = 'localthings')
+    private static function buildDeviceClient($logName = 'localthings')
     {
         $openssl = LocalThingsDeviceClient::findOpenSsl();
         if ($openssl === '' || !LocalThingsDeviceClient::supportsDtls($openssl)) {
@@ -104,6 +145,14 @@ class localthings extends eqLogic
                 log::add($logName, $level, $message);
             }
         );
+    }
+
+    public static function deviceClient($logName = 'localthings')
+    {
+        if (self::$daemonDeviceClient instanceof LocalThingsDeviceClient && $logName === __CLASS__) {
+            return self::$daemonDeviceClient;
+        }
+        return self::buildDeviceClient($logName);
     }
 
     /**
@@ -147,12 +196,20 @@ class localthings extends eqLogic
         self::assertCertificates();
         $networks = self::configuredNetworks();
         log::add(__CLASS__, 'info', sprintf(__('[Discovery] Découverte réseau demandée : %s', __FILE__), implode(', ', $networks)));
-        $status = LocalThingsDiscovery::start(
-            self::resourcePath() . '/discover.php',
-            $networks,
-            array(),
-            log::getPathToLog(__CLASS__)
-        );
+        $lease = self::daemonIpc(5.0)->request('discovery.pause', array(), 5000);
+        $token = (string) ($lease['token'] ?? '');
+        try {
+            $status = LocalThingsDiscovery::start(
+                self::resourcePath() . '/discover.php',
+                $networks,
+                array(),
+                log::getPathToLog(__CLASS__),
+                $token
+            );
+        } catch (Throwable $error) {
+            self::resumeDiscoveryLease($token);
+            throw $error;
+        }
         log::add(__CLASS__, 'info', sprintf(__('[Discovery] Tâche PHP lancée, PID=%d', __FILE__), (int) ($status['worker_pid'] ?? 0)));
         return $status;
     }
@@ -169,12 +226,20 @@ class localthings extends eqLogic
             self::assertCertificates();
         }
         log::add(__CLASS__, 'info', sprintf(__('[Discovery] Ajout manuel demandé pour %s', __FILE__), trim((string) $host)));
-        $status = LocalThingsDiscovery::start(
-            self::resourcePath() . '/discover.php',
-            array(),
-            array((string) $host),
-            log::getPathToLog(__CLASS__)
-        );
+        $lease = self::daemonIpc(5.0)->request('discovery.pause', array(), 5000);
+        $token = (string) ($lease['token'] ?? '');
+        try {
+            $status = LocalThingsDiscovery::start(
+                self::resourcePath() . '/discover.php',
+                array(),
+                array((string) $host),
+                log::getPathToLog(__CLASS__),
+                $token
+            );
+        } catch (Throwable $error) {
+            self::resumeDiscoveryLease($token);
+            throw $error;
+        }
         log::add(__CLASS__, 'info', sprintf(__('[Discovery] Tâche PHP manuelle lancée, PID=%d', __FILE__), (int) ($status['worker_pid'] ?? 0)));
         return $status;
     }
@@ -187,6 +252,21 @@ class localthings extends eqLogic
     public static function scanStatus()
     {
         return LocalThingsDiscovery::readStatus();
+    }
+
+    public static function resumeDiscoveryLease($token)
+    {
+        $token = trim((string) $token);
+        if ($token === '') {
+            return false;
+        }
+        try {
+            self::daemonIpc(5.0)->request('discovery.resume', array('token' => $token), 5000);
+            return true;
+        } catch (Throwable $error) {
+            log::add(__CLASS__, 'warning', '[Discovery] Reprise du démon impossible : ' . $error->getMessage());
+            return false;
+        }
     }
 
     /** Demande l'arrêt de la découverte identifiée par l'interface. */
@@ -986,7 +1066,97 @@ class localthings extends eqLogic
      *
      * @return void
      */
-    public static function poll()
+    public static function inDaemonMode()
+    {
+        return self::$daemonDeviceClient instanceof LocalThingsDeviceClient;
+    }
+
+    public static function daemonCommand($commandId, array $options)
+    {
+        return self::daemonIpc(70.0)->request('command', array(
+            'cmd_id' => (int) $commandId,
+            'options' => $options,
+        ), 70000);
+    }
+
+    public static function daemonHandle($operation, array $payload)
+    {
+        $now = time();
+        if (is_array(self::$discoveryLease) && (int) (self::$discoveryLease['expires'] ?? 0) <= $now) {
+            log::add(__CLASS__, 'warning', '[Daemon] Bail de découverte expiré, reprise des communications');
+            self::$discoveryLease = null;
+        }
+        if ($operation === 'discovery.pause') {
+            self::enterDaemonMode()->closeSessions();
+            $token = bin2hex(random_bytes(24));
+            self::$discoveryLease = array('token' => $token, 'expires' => $now + 900);
+            return self::$discoveryLease;
+        }
+        if ($operation === 'discovery.resume') {
+            $token = (string) ($payload['token'] ?? '');
+            if (is_array(self::$discoveryLease)
+                && !hash_equals((string) self::$discoveryLease['token'], $token)) {
+                throw new LocalThingsDaemonRemoteException(
+                    __('Bail de découverte invalide', __FILE__), 'INVALID_DISCOVERY_LEASE', false, 'discovery'
+                );
+            }
+            self::$discoveryLease = null;
+            return array('resumed' => true);
+        }
+        if ($operation === 'sessions.close') {
+            return array('closed' => self::enterDaemonMode()->closeSessions());
+        }
+        if (is_array(self::$discoveryLease)) {
+            throw new LocalThingsDaemonRemoteException(
+                __('Découverte LocalThings en cours', __FILE__), 'DISCOVERY_BUSY', true, 'discovery'
+            );
+        }
+        if ($operation === 'refresh' || $operation === 'test') {
+            $eqLogic = self::byId((int) ($payload['eq_id'] ?? 0));
+            if (!is_object($eqLogic) || $eqLogic->getEqType_name() !== __CLASS__) {
+                throw new LocalThingsDaemonRemoteException(
+                    __('Équipement LocalThings introuvable', __FILE__), 'EQUIPMENT_NOT_FOUND', false, 'validation'
+                );
+            }
+            return $operation === 'test' ? $eqLogic->testCommunicationDirect() : $eqLogic->refreshDirect();
+        }
+        if ($operation === 'command') {
+            $command = cmd::byId((int) ($payload['cmd_id'] ?? 0));
+            if (!is_object($command) || !($command instanceof localthingsCmd)) {
+                throw new LocalThingsDaemonRemoteException(
+                    __('Commande LocalThings introuvable', __FILE__), 'COMMAND_NOT_FOUND', false, 'validation'
+                );
+            }
+            try {
+                return $command->executeDirect((array) ($payload['options'] ?? array()));
+            } catch (LocalThingsCommandRejectedException $exception) {
+                throw new LocalThingsDaemonRemoteException(
+                    $exception->getMessage(), 'COMMAND_REJECTED', false, 'verification'
+                );
+            }
+        }
+        if ($operation === 'poll.now') {
+            self::pollDirect();
+            return array('polled' => true);
+        }
+        throw new LocalThingsDaemonRemoteException(
+            __('Opération du démon inconnue', __FILE__), 'UNKNOWN_OPERATION', false, 'ipc'
+        );
+    }
+
+    public static function daemonTick()
+    {
+        if (is_array(self::$discoveryLease)) {
+            if ((int) (self::$discoveryLease['expires'] ?? 0) <= time()) {
+                self::$discoveryLease = null;
+            } else {
+                return;
+            }
+        }
+        self::pollDirect();
+    }
+
+    public static function pollDirect()
     {
         self::reloadLogConfiguration();
         $now = time();
@@ -998,71 +1168,112 @@ class localthings extends eqLogic
                 continue;
             }
             try {
-                $eqLogic->refresh();
-            } catch (Exception $exception) {
-                log::add(__CLASS__,'warning',$eqLogic->getHumanName() . ' : ' . $exception->getMessage());
+                $eqLogic->refreshDirect();
+            } catch (Throwable $exception) {
+                $eqLogic->checkAndUpdateCmd('connected', 0);
+                $eqLogic->setConfiguration('last_error', $exception->getMessage());
+                $eqLogic->setConfiguration('last_refresh', time());
+                $eqLogic->save(true);
+                log::add(__CLASS__, 'warning', $eqLogic->getHumanName() . ' : ' . $exception->getMessage());
             }
         }
     }
 
-    /**
-     * Assure un rafraîchissement de secours lorsque le démon est arrêté.
-     *
-     * @return void
-     */
-    public static function cron()
+    public static function poll()
     {
-        $pollCron = cron::byClassAndFunction(__CLASS__, 'poll');
-        if (is_object($pollCron) && $pollCron->running()) {
+        if (self::inDaemonMode()) {
+            self::pollDirect();
             return;
         }
-        self::poll();
+        self::daemonIpc(120.0)->request('poll.now', array(), 120000);
     }
 
-    /**
-     * Retourne l'état du démon au format attendu par Jeedom.
-     *
-     * @return array<string,string>
-     */
+    public static function cron()
+    {
+        if ((self::deamon_info()['state'] ?? 'nok') !== 'ok') {
+            self::deamon_start();
+        }
+    }
+
+    private static function phpCliBinary()
+    {
+        $candidates = array();
+        if (PHP_SAPI === 'cli' && defined('PHP_BINARY')) { $candidates[] = PHP_BINARY; }
+        $candidates[] = '/usr/bin/php';
+        if (defined('PHP_BINDIR')) { $candidates[] = rtrim(PHP_BINDIR, '/') . '/php'; }
+        $candidates[] = '/usr/local/bin/php';
+        foreach (array_unique($candidates) as $candidate) {
+            if ($candidate !== '' && is_file($candidate) && is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+        throw new RuntimeException(__('Exécutable PHP CLI introuvable', __FILE__));
+    }
+
     public static function deamon_info()
     {
-        $pollCron = cron::byClassAndFunction(__CLASS__, 'poll');
+        try {
+            // Le démon traite volontairement les échanges DTLS dans une seule
+            // boucle. Pendant une lecture longue, une requête `health` attendrait
+            // derrière l'opération et Jeedom lancerait à tort un second démon.
+            // Le triplet verrou détenu + socket + heartbeat identifie ce cas
+            // comme « occupé mais vivant » sans créer de requête en attente.
+            $state = self::daemonIpc(2.0)->runtimeStatus(180) ? 'ok' : 'nok';
+        } catch (Throwable $exception) {
+            $state = 'nok';
+        }
+        $script = self::pluginRoot() . '/resources/daemon.php';
+        $launchable = is_file($script) ? 'ok' : 'nok';
         return array(
-            'log' => __CLASS__,
-            'state' => is_object($pollCron) && $pollCron->running() ? 'ok' : 'nok',
-            'launchable' => is_object($pollCron) ? 'ok' : 'nok',
-            'launchable_message' => is_object($pollCron)
-                ? ''
-                : __('Tâche de rafraîchissement introuvable, réinstallez le plugin', __FILE__),
+            'log' => __CLASS__ . '_daemon',
+            'state' => $state,
+            'launchable' => $launchable,
+            'launchable_message' => $launchable === 'ok' ? '' : __('Script du démon PHP introuvable', __FILE__),
         );
     }
 
-    /**
-     * Démarre la tâche Jeedom persistante de rafraîchissement.
-     *
-     * @return void
-     */
     public static function deamon_start()
     {
-        self::deamon_stop();
-        $pollCron = cron::byClassAndFunction(__CLASS__, 'poll');
-        if (!is_object($pollCron)) {
-            throw new RuntimeException(__('Tâche de rafraîchissement introuvable', __FILE__));
+        if ((self::deamon_info()['state'] ?? 'nok') === 'ok') {
+            return true;
         }
-        $pollCron->run();
+        $script = self::pluginRoot() . '/resources/daemon.php';
+        if (!is_file($script)) {
+            throw new RuntimeException(__('Script du démon PHP introuvable', __FILE__));
+        }
+        $php = self::phpCliBinary();
+        $logPath = log::getPathToLog(__CLASS__ . '_daemon');
+        $command = escapeshellarg($php) . ' ' . escapeshellarg($script)
+            . ' >> ' . escapeshellarg($logPath) . ' 2>&1 &';
+        exec($command, $output, $status);
+        if ($status !== 0) {
+            throw new RuntimeException(__('Échec du lancement du démon LocalThings', __FILE__));
+        }
+        $deadline = microtime(true) + 8.0;
+        do {
+            usleep(100000);
+            if ((self::deamon_info()['state'] ?? 'nok') === 'ok') {
+                return true;
+            }
+        } while (microtime(true) < $deadline);
+        throw new RuntimeException(__('Le démon LocalThings ne répond pas après son lancement', __FILE__));
     }
 
-    /**
-     * Arrête la tâche Jeedom persistante de rafraîchissement.
-     *
-     * @return void
-     */
     public static function deamon_stop()
     {
-        $pollCron = cron::byClassAndFunction(__CLASS__, 'poll');
-        if (is_object($pollCron)) {
-            $pollCron->halt();
+        try {
+            self::daemonIpc(3.0)->stop();
+        } catch (Throwable $exception) {
+            // Un démon déjà arrêté ne constitue pas une erreur.
         }
+        $deadline = microtime(true) + 4.0;
+        while (microtime(true) < $deadline) {
+            if ((self::deamon_info()['state'] ?? 'nok') !== 'ok') {
+                return true;
+            }
+            usleep(100000);
+        }
+        return false;
     }
 
     /**
@@ -1182,22 +1393,33 @@ class localthings extends eqLogic
      */
     public function refresh()
     {
-        $host = (string) $this->getConfiguration('host');
-        $port = (int) $this->getConfiguration('port');
-        if ($host === '' || $port === 0) {
-            throw new RuntimeException(__('Adresse LocalThings absente', __FILE__));
-        }
         try {
-            $snapshot = self::deviceClient()->refresh($host, $port, $this->knownDeviceContext());
-            self::registerSnapshot($snapshot);
-            return $snapshot;
-        } catch (Exception $exception) {
+            if (self::$daemonDeviceClient instanceof LocalThingsDeviceClient) {
+                return $this->refreshDirect();
+            }
+            return self::daemonIpc(45.0)->request('refresh', array(
+                'eq_id' => (int) $this->getId(),
+                'reason' => 'manual',
+            ), 45000);
+        } catch (Throwable $exception) {
             $this->checkAndUpdateCmd('connected', 0);
             $this->setConfiguration('last_error', $exception->getMessage());
             $this->setConfiguration('last_refresh', time());
             $this->save(true);
             throw $exception;
         }
+    }
+
+    public function refreshDirect()
+    {
+        $host = (string) $this->getConfiguration('host');
+        $port = (int) $this->getConfiguration('port');
+        if ($host === '' || $port === 0) {
+            throw new RuntimeException(__('Adresse LocalThings absente', __FILE__));
+        }
+        $snapshot = self::deviceClient()->refresh($host, $port, $this->knownDeviceContext());
+        self::registerSnapshot($snapshot);
+        return $snapshot;
     }
 
     /**
@@ -1207,39 +1429,49 @@ class localthings extends eqLogic
      */
     public function testCommunication()
     {
-        $host = trim((string) $this->getConfiguration('host'));
-        $port = (int) $this->getConfiguration('port');
-        if ($host === '' || $port === 0) {
-            throw new RuntimeException(__('Adresse LocalThings absente', __FILE__));
-        }
-        $started = microtime(true);
         try {
-            $snapshot = self::deviceClient()->refresh($host, $port, $this->knownDeviceContext());
-            if (!is_array($snapshot) || empty($snapshot['device'])) {
-                throw new RuntimeException(__('Réponse LocalThings invalide', __FILE__));
+            if (self::$daemonDeviceClient instanceof LocalThingsDeviceClient) {
+                return $this->testCommunicationDirect();
             }
-            $duration = (int) round((microtime(true) - $started) * 1000);
-            $lastCommunication = date('Y-m-d H:i:s');
-            $this->checkAndUpdateCmd('connected', 1);
-            $this->setConfiguration('last_communication', $lastCommunication);
-            $this->setConfiguration('last_error', '');
-            $this->save(true);
-            log::add(__CLASS__, 'info', sprintf( __('[Test] Communication réussie avec %1$s en %2$d ms', __FILE__), $this->getHumanName(), $duration));
-            return array(
-                'success' => true,
-                'duration_ms' => $duration,
-                'last_communication' => $lastCommunication,
-                'last_error' => '',
-                'message' => __('Communication avec l’appareil réussie', __FILE__)
-                    . ' (' . $duration . ' ms)',
-            );
-        } catch (Exception $exception) {
+            return self::daemonIpc(45.0)->request('test', array(
+                'eq_id' => (int) $this->getId(),
+            ), 45000);
+        } catch (Throwable $exception) {
             $this->checkAndUpdateCmd('connected', 0);
             $this->setConfiguration('last_error', $exception->getMessage());
             $this->save(true);
             log::add(__CLASS__, 'warning', sprintf(__('[Test] Échec de communication avec %1$s : %2$s', __FILE__), $this->getHumanName(), $exception->getMessage()));
             throw $exception;
         }
+    }
+
+    public function testCommunicationDirect()
+    {
+        $host = trim((string) $this->getConfiguration('host'));
+        $port = (int) $this->getConfiguration('port');
+        if ($host === '' || $port === 0) {
+            throw new RuntimeException(__('Adresse LocalThings absente', __FILE__));
+        }
+        $started = microtime(true);
+        $snapshot = self::deviceClient()->refresh($host, $port, $this->knownDeviceContext());
+        if (!is_array($snapshot) || empty($snapshot['device'])) {
+            throw new RuntimeException(__('Réponse LocalThings invalide', __FILE__));
+        }
+        $duration = (int) round((microtime(true) - $started) * 1000);
+        $lastCommunication = date('Y-m-d H:i:s');
+        $this->checkAndUpdateCmd('connected', 1);
+        $this->setConfiguration('last_communication', $lastCommunication);
+        $this->setConfiguration('last_error', '');
+        $this->save(true);
+        log::add(__CLASS__, 'info', sprintf( __('[Test] Communication réussie avec %1$s en %2$d ms', __FILE__), $this->getHumanName(), $duration));
+        return array(
+            'success' => true,
+            'duration_ms' => $duration,
+            'last_communication' => $lastCommunication,
+            'last_error' => '',
+            'message' => __('Communication avec l’appareil réussie', __FILE__)
+                . ' (' . $duration . ' ms)',
+        );
     }
 
     /**
@@ -1793,6 +2025,34 @@ class localthingsCmd extends cmd
      * @return array<string,mixed>|null
      */
     public function execute($_options = array())
+    {
+        if ($this->getType() !== 'action') {
+            return null;
+        }
+        $eqLogic = $this->getEqLogic();
+        if (!is_object($eqLogic)) {
+            throw new RuntimeException(__('Équipement LocalThings introuvable', __FILE__));
+        }
+        if ((string) $this->getConfiguration('operation', '') === 'refresh') {
+            return $eqLogic->refresh();
+        }
+        if (localthings::inDaemonMode()) {
+            return $this->executeDirect($_options);
+        }
+        try {
+            return localthings::daemonCommand((int) $this->getId(), (array) $_options);
+        } catch (Throwable $exception) {
+            if (!($exception instanceof LocalThingsDaemonRemoteException)
+                || $exception->remoteCode() !== 'COMMAND_REJECTED') {
+                $eqLogic->checkAndUpdateCmd('connected', 0);
+            }
+            $eqLogic->setConfiguration('last_error', $exception->getMessage());
+            $eqLogic->save(true);
+            throw $exception;
+        }
+    }
+
+    public function executeDirect($_options = array())
     {
         if ($this->getType() !== 'action') {
             return null;

@@ -1105,6 +1105,12 @@ class LocalThingsDtlsClient
         $this->validateConfiguration();
     }
 
+    /** Port UDP source utilisé par ce transport. */
+    public function localPort()
+    {
+        return $this->localPort;
+    }
+
     /**
      * Lance OpenSSL et attend la fin du handshake DTLS.
      *
@@ -1149,7 +1155,6 @@ class LocalThingsDtlsClient
             '-brief',
             '-state',
             '-quiet',
-            '-ign_eof',
         );
         if ($this->serverAuthReadOnly) {
             // Profil de lecture expérimentale Samsung : vérification serveur
@@ -1417,43 +1422,51 @@ class LocalThingsDtlsClient
             return;
         }
         $this->closed = true;
+        $closeNotifyStatus = 'none';
+        if (is_resource($this->process)) {
+            $status = @proc_get_status($this->process);
+            if (is_array($status) && !empty($status['running'])) {
+                if (isset($this->pipes[0]) && is_resource($this->pipes[0])) {
+                    @fclose($this->pipes[0]);
+                    unset($this->pipes[0]);
+                }
+                $deadline = microtime(true) + 0.75;
+                do {
+                    usleep(20000);
+                    $status = @proc_get_status($this->process);
+                } while (is_array($status) && !empty($status['running']) && microtime(true) < $deadline);
+                if (is_array($status) && empty($status['running'])) {
+                    $closeNotifyStatus = 'delivered';
+                    $this->closeProcessResource($this->process);
+                } else {
+                    $closeNotifyStatus = 'terminated_early';
+                    @proc_terminate($this->process, 15);
+                    $deadline = microtime(true) + 0.5;
+                    do {
+                        usleep(20000);
+                        $status = @proc_get_status($this->process);
+                    } while (is_array($status) && !empty($status['running']) && microtime(true) < $deadline);
+                    if (is_array($status) && !empty($status['running'])) {
+                        @proc_terminate($this->process, 9);
+                    } else {
+                        $this->closeProcessResource($this->process);
+                    }
+                }
+            } elseif (is_array($status)) {
+                $this->closeProcessResource($this->process);
+            }
+            foreach ($this->pipes as $pipe) {
+                if (is_resource($pipe)) { @fclose($pipe); }
+            }
+            $this->pipes = array();
+        }
         if ($this->relay !== null) {
             $this->relay->close();
             $this->relay = null;
         }
-        // Tenter un close_notify avant de tuer OpenSSL : l'appareil ne libère
-        // la peer DTLS que s'il reçoit l'alerte close_notify, et il n'a pas de
-        // timeout d'inactivité pour la réclamer. Fermer stdin permet à OpenSSL
-        // de sérialiser l'alerte avant toute terminaison.
-        if (is_resource($this->process)) {
-            if (isset($this->pipes[0]) && is_resource($this->pipes[0])) {
-                @fclose($this->pipes[0]);
-                $this->pipes[0] = null;
-            }
-            $status = proc_get_status($this->process);
-            if ($status['running']) {
-                usleep(200000);
-            }
-            $status = proc_get_status($this->process);
-            if ($status['running']) {
-                @proc_terminate($this->process);
-                $deadline = microtime(true) + 1.0;
-                do {
-                    usleep(20000);
-                    $status = proc_get_status($this->process);
-                } while ($status['running'] && microtime(true) < $deadline);
-                if ($status['running']) {
-                    @proc_terminate($this->process, 9);
-                }
-            }
-            foreach ($this->pipes as $pipe) {
-                if (is_resource($pipe)) {
-                    @fclose($pipe);
-                }
-            }
-            $this->pipes = array();
-            @proc_close($this->process);
-        }
+        $this->log('info', '[Session] host=' . $this->host . ' port=' . $this->port
+            . ' localPort=' . $this->localPort
+            . ' close_notify=' . $closeNotifyStatus);
         $this->process = null;
         $this->receiveBuffer = '';
         $this->lastReceiveAt = 0.0;
@@ -1522,6 +1535,26 @@ class LocalThingsDtlsClient
     }
 
     /**
+     * Récolte un processus terminé sans laisser une ressource invalide faire
+     * échouer le cron Jeedom. PHP peut invalider le handle entre le dernier
+     * proc_get_status() et proc_close() ; cette fermeture reste best-effort.
+     *
+     * @param resource $process
+     * @return void
+     */
+    private function closeProcessResource($process)
+    {
+        if (!is_resource($process)) {
+            return;
+        }
+        try {
+            @proc_close($process);
+        } catch (Throwable $exception) {
+            $this->log('debug', '[Session] Processus OpenSSL déjà récolté');
+        }
+    }
+
+    /**
      * Indique si le processus OpenSSL est toujours actif.
      *
      * @return bool
@@ -1533,6 +1566,19 @@ class LocalThingsDtlsClient
         }
         $status = proc_get_status($this->process);
         return !empty($status['running']);
+    }
+
+    /**
+     * Indique si le processus OpenSSL est actif et la session non fermée.
+     *
+     * Utilisé par la maintenance de session pour décider si une négociation
+     * DTLS peut être omise entre deux rafraîchissements.
+     *
+     * @return bool
+     */
+    public function isConnected()
+    {
+        return !$this->closed && $this->isRunning();
     }
 
     /**

@@ -1,24 +1,13 @@
 <?php
 
-/**
- * Crée ou normalise la tâche Jeedom utilisée comme démon de rafraîchissement.
- *
- * @return void
- */
-function localthings_configure_poll_cron()
+/** Supprime l'ancienne pseudo-tâche démon devenue incompatible avec le propriétaire DTLS unique. */
+function localthings_remove_legacy_poll_cron()
 {
     $cron = cron::byClassAndFunction('localthings', 'poll');
-    if (!is_object($cron)) {
-        $cron = new cron();
+    if (is_object($cron)) {
+        if ($cron->running()) { $cron->halt(); }
+        $cron->remove();
     }
-    $cron->setClass('localthings');
-    $cron->setFunction('poll');
-    $cron->setEnable(1);
-    $cron->setDeamon(1);
-    $cron->setDeamonSleepTime(10);
-    $cron->setSchedule('* * * * *');
-    $cron->setTimeout(1440);
-    $cron->save();
 }
 
 /**
@@ -64,7 +53,7 @@ function localthings_install()
     config::save('poll_interval_online', '1', 'localthings');
     config::save('poll_interval_offline', '5', 'localthings');
     config::remove('poll_interval', 'localthings');
-    localthings_configure_poll_cron();
+    localthings_remove_legacy_poll_cron();
 }
 
 /**
@@ -93,7 +82,7 @@ function localthings_update()
     );
     config::remove('poll_interval', 'localthings');
     config::remove('daemon_port', 'localthings');
-    localthings_configure_poll_cron();
+    localthings_remove_legacy_poll_cron();
 }
 
 /**
@@ -103,8 +92,8 @@ function localthings_update()
  */
 function localthings_remove()
 {
-    $cron = cron::byClassAndFunction('localthings', 'poll');
-    if (is_object($cron)) {
-        $cron->remove();
-    }
+    try {
+        if (class_exists('localthings')) { localthings::deamon_stop(); }
+    } catch (Throwable $error) {}
+    localthings_remove_legacy_poll_cron();
 }

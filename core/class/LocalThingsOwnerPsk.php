@@ -112,6 +112,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
     private $credential;
     private $process;
     private $pipes = array();
+    private $sourcePort;
 
     public function __construct($host, $port, array $credential)
     {
@@ -120,6 +121,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         }
         $this->host = $host; $this->port = (int) $port;
         $this->credential = LocalThingsOwnerPsk::validate($credential);
+        $this->sourcePort = 40000 + ((ip2long($this->host) & 0xFFFF) % 20000);
     }
 
     public function connect($timeout = 12.0)
@@ -132,7 +134,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         stream_set_blocking($this->pipes[1], false);
         try {
             $this->rpc(array('action' => 'connect', 'host' => $this->host, 'port' => $this->port,
-                'source_port' => 40000 + ((ip2long($this->host) & 0xFFFF) % 20000),
+                'source_port' => $this->sourcePort,
                 'identity' => bin2hex(LocalThingsOwnerPsk::uuidBytes($this->credential['owner_uuid'])),
                 'key' => $this->credential['key'], 'timeout' => $timeout), $timeout + 2);
             // Verify the device binding before exposing this session to normal reads/writes.
@@ -181,11 +183,27 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         return $frame;
     }
     public function errorSummary() { return 'Transport OwnerPSK'; }
+    public function localPort() { return (int) $this->sourcePort; }
+    public function isConnected()
+    {
+        if (!is_resource($this->process)) { return false; }
+        $status = @proc_get_status($this->process);
+        return is_array($status) && !empty($status['running'])
+            && isset($this->pipes[0], $this->pipes[1])
+            && is_resource($this->pipes[0]) && is_resource($this->pipes[1]);
+    }
     public function close()
     {
+        if ($this->isConnected()) {
+            try { $this->rpc(array('action' => 'close'), 2.0); } catch (Throwable $error) {}
+        }
         foreach ($this->pipes as $pipe) { if (is_resource($pipe)) { fclose($pipe); } }
         $this->pipes = array();
-        if (is_resource($this->process)) { proc_terminate($this->process); proc_close($this->process); }
+        if (is_resource($this->process)) {
+            $status = @proc_get_status($this->process);
+            if (is_array($status) && !empty($status['running'])) { @proc_terminate($this->process, 15); }
+            try { @proc_close($this->process); } catch (Throwable $error) {}
+        }
         $this->process = null;
     }
     public function __destruct() { $this->close(); }

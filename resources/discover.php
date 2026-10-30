@@ -4,8 +4,9 @@
 require_once __DIR__ . '/../../../core/php/core.inc.php';
 require_once __DIR__ . '/../core/class/localthings.class.php';
 
-$options = getopt('', array('job:'));
+$options = getopt('', array('job:', 'lease:'));
 $jobId = (string) ($options['job'] ?? '');
+$leaseToken = (string) ($options['lease'] ?? '');
 if (!preg_match('/^[a-f0-9]{32}$/D', $jobId)) {
     fwrite(STDERR, __('Tâche LocalThings invalide', __FILE__) . "\n");
     exit(1);
@@ -34,5 +35,10 @@ try {
     }, $logger);
 } catch (Throwable $error) {
     $logger('error', '[Discovery] ' . $error->getMessage());
-    exit(1);
+    $exitCode = 1;
+} finally {
+    if ($leaseToken !== '') {
+        localthings::resumeDiscoveryLease($leaseToken);
+    }
 }
+exit($exitCode ?? 0);

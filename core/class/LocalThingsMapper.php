@@ -995,39 +995,10 @@ class LocalThingsMapper
             }
         }
 
-        $course = $resources['/course/vs/0'] ?? array();
-        $raw = $course['x.com.samsung.da.supportedOptions'] ?? null;
-        if (is_array($raw)) {
-            $raw = reset($raw);
-        }
-        if (!is_string($raw) || strlen($raw) < 3) {
-            return array();
-        }
-        $body = strtoupper(substr($raw, 1));
-        if ($body === '' || strlen($body) % 2 !== 0 || !ctype_xdigit($body)) {
-            return array();
-        }
-        $totalBytes = (int) (strlen($body) / 2);
-        for ($width = 1; $width <= $totalBytes; $width++) {
-            if ($totalBytes % $width !== 0) {
-                continue;
-            }
-            $count = (int) ($totalBytes / $width);
-            if ($count < 2) {
-                continue;
-            }
-            $codes = array();
-            for ($index = 0; $index < $count; $index++) {
-                $codes[] = substr($body, $index * $width * 2, 2);
-            }
-            if (count(array_unique($codes)) !== count($codes)) {
-                continue;
-            }
-            if ($current !== null && !in_array(strtoupper($current), $codes, true)) {
-                continue;
-            }
-            return $codes;
-        }
+        // `supportedOptions` n'est pas une liste de codes de programme : c'est
+        // un descripteur binaire Samsung. Le découper en octets fabriquait des
+        // valeurs comme `DA`, ensuite acquittées en CoAP mais ignorées par
+        // l'appareil. Seule `editCourseList` constitue une liste modifiable.
         return array();
     }
 
