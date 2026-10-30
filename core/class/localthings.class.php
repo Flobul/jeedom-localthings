@@ -23,7 +23,7 @@ require_once __DIR__ . '/LocalThingsDaemon.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.7.0';
+    public static $_pluginVersion = '0.7.1';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -1308,8 +1308,8 @@ class localthings extends eqLogic
         }
         $pollIntervalOnline = self::pollIntervalSecondsForState(true);
         $pollIntervalOffline = self::pollIntervalSecondsForState(false);
-        $pollCron = cron::byClassAndFunction(__CLASS__, 'poll');
-        $pollRunning = is_object($pollCron) && $pollCron->running();
+        $daemon = self::deamon_info();
+        $daemonRunning = ($daemon['state'] ?? 'nok') === 'ok';
         return array(
             array(
                 'test' => __('Transport OpenSSL DTLS', __FILE__),
@@ -1361,9 +1361,9 @@ class localthings extends eqLogic
                     . self::pollIntervalLabel($pollIntervalOnline)
                     . ' / ' . __('Hors ligne', __FILE__) . ' : '
                     . self::pollIntervalLabel($pollIntervalOffline)
-                    . ' - ' . ($pollRunning ? 'OK' : __('Démon arrêté', __FILE__)),
-                'advice' => $pollRunning ? '' : __('Démarrez le démon du plugin', __FILE__),
-                'state' => $pollRunning,
+                    . ' - ' . ($daemonRunning ? 'OK' : __('Démon arrêté', __FILE__)),
+                'advice' => $daemonRunning ? '' : __('Démarrez le démon du plugin', __FILE__),
+                'state' => $daemonRunning,
             ),
         );
     }

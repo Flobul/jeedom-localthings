@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## Version 0.7.1 (30/10/2026)
+
+- La page Santé lit désormais l’état du démon PHP réel au lieu de l’ancienne tâche cron de rafraîchissement, ce qui évite d’afficher « Démon arrêté » alors qu’il fonctionne.
+
 ## Version 0.7.0 (30/10/2026)
 
 - Un démon PHP unique détient désormais toutes les sessions DTLS et reçoit les rafraîchissements et commandes par une socket Unix privée ; un refresh manuel ou une commande ne peut plus invalider la session du polling.
