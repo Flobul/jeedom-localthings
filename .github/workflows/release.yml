@@ -21,6 +21,15 @@ on:
         required: true
         default: main
         type: string
+      translation_mode:
+        description: Pre-Release translation gate (simulation preserves current behavior)
+        required: true
+        default: simulate
+        type: choice
+        options:
+          - disabled
+          - simulate
+          - enforce
 
 concurrency:
   group: stable-release-${{ github.repository }}
@@ -39,6 +48,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
       action: ${{ steps.guard.outputs.action }}
       reason: ${{ steps.guard.outputs.reason }}
@@ -47,6 +57,9 @@ jobs:
       tag: ${{ steps.guard.outputs.tag }}
       target_commit: ${{ steps.guard.outputs.target_commit }}
       authorized: ${{ steps.target.outputs.authorized }}
+      translation_ready: ${{ steps.translation_gate.outputs.release_allowed }}
+      translation_reason: ${{ steps.translation_gate.outputs.reason }}
+      dispatch_translation: ${{ steps.translation_gate.outputs.dispatch_translation }}
     steps:
       - name: Resolve immutable target and authorization
         id: target
@@ -56,6 +69,8 @@ jobs:
           WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           REQUESTED_REF: ${{ inputs.ref || 'main' }}
           REQUESTED_MODE: ${{ inputs.mode || 'simulate' }}
+          REQUESTED_TRANSLATION_MODE: ${{ inputs.translation_mode || 'simulate' }}
+          PRE_RELEASE_TRANSLATION_MODE: ${{ vars.PRE_RELEASE_TRANSLATION_MODE || 'disabled' }}
           RELEASE_AUTOMATION_ENABLED: ${{ vars.RELEASE_AUTOMATION_ENABLED || 'false' }}
         run: |
           set -euo pipefail
@@ -63,10 +78,12 @@ jobs:
             target="$WORKFLOW_RUN_SHA"
             ci_conclusion="$WORKFLOW_RUN_CONCLUSION"
             requested_mode="release"
+            translation_mode="$PRE_RELEASE_TRANSLATION_MODE"
           else
             target="$REQUESTED_REF"
             ci_conclusion="manual-check-required"
             requested_mode="$REQUESTED_MODE"
+            translation_mode="$REQUESTED_TRANSLATION_MODE"
           fi
           authorized=false
           if [ "$requested_mode" = "release" ] && [ "$RELEASE_AUTOMATION_ENABLED" = "true" ]; then
@@ -76,6 +93,7 @@ jobs:
             echo "target=$target"
             echo "ci_conclusion=$ci_conclusion"
             echo "requested_mode=$requested_mode"
+            echo "translation_mode=$translation_mode"
             echo "authorized=$authorized"
           } >> "$GITHUB_OUTPUT"
 
@@ -127,6 +145,47 @@ jobs:
           --notes-output "$RUNNER_TEMP/release-notes.md"
           --github-output "$GITHUB_OUTPUT"
 
+      - name: Test pre-Release translation gate
+        run: python3 .github/ci/test_pre_release_translation.py
+
+      - name: Inspect prior translation state for this candidate
+        id: translation_state
+        if: steps.guard.outputs.action != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_COMMIT: ${{ steps.guard.outputs.target_commit }}
+        run: |
+          set -euo pipefail
+          pr_count="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head translations --json number --jq 'length')"
+          attempt_count="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow translation.yml --commit "$TARGET_COMMIT" --limit 20 --json databaseId --jq 'length')"
+          if [ "$pr_count" -gt 0 ]; then
+            echo "pr_open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr_open=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$attempt_count" -gt 0 ]; then
+            echo "attempt_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "attempt_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate pre-Release translation gate
+        id: translation_gate
+        env:
+          RELEASE_ACTION: ${{ steps.guard.outputs.action }}
+          TRANSLATION_MODE: ${{ steps.target.outputs.translation_mode }}
+          TRANSLATION_PR_OPEN: ${{ steps.translation_state.outputs.pr_open || 'false' }}
+          TRANSLATION_ATTEMPT_EXISTS: ${{ steps.translation_state.outputs.attempt_exists || 'false' }}
+        run: >-
+          python3 .github/ci/pre_release_translation.py
+          --root .
+          --release-action "$RELEASE_ACTION"
+          --mode "$TRANSLATION_MODE"
+          --translation-pr-open "$TRANSLATION_PR_OPEN"
+          --translation-attempt-exists "$TRANSLATION_ATTEMPT_EXISTS"
+          --report "$RUNNER_TEMP/pre-release-translation.json"
+          --github-output "$GITHUB_OUTPUT"
+
       - name: Upload release plan and exact notes
         uses: actions/upload-artifact@v7
         with:
@@ -134,15 +193,33 @@ jobs:
           path: |
             ${{ runner.temp }}/release-plan.json
             ${{ runner.temp }}/release-notes.md
+            ${{ runner.temp }}/pre-release-translation.json
           if-no-files-found: error
           retention-days: 30
+
+  request-translations:
+    name: Request reviewable translation pull request
+    needs: plan
+    if: needs.plan.outputs.dispatch_translation == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch translation generation once for this candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run translation.yml --ref "$DEFAULT_BRANCH"
 
   publish:
     name: Create immutable tag and GitHub Release
     needs: plan
     if: >-
       needs.plan.outputs.authorized == 'true' &&
-      needs.plan.outputs.action != 'none'
+      needs.plan.outputs.action != 'none' &&
+      needs.plan.outputs.translation_ready == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release-production
@@ -158,6 +235,16 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+
+      - name: Revalidate candidate is still the default-branch head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          TARGET_COMMIT: ${{ needs.plan.outputs.target_commit }}
+        run: |
+          set -euo pipefail
+          default_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEFAULT_BRANCH" --jq '.sha')"
+          [ "$TARGET_COMMIT" = "$default_sha" ] || { echo "Candidate became stale before publication" >&2; exit 1; }
 
       - name: Download reviewed release plan
         uses: actions/download-artifact@v8
