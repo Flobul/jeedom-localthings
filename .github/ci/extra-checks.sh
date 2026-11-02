@@ -11,3 +11,4 @@ test -z "$(git ls-files | grep -E '(^|/)\.DS_Store$' || true)"
 python3 .github/ci/test_release_guard.py
 python3 .github/ci/test_release_workflow.py
 bash .github/ci/run_functional_tests.sh
+python3 .github/ci/test_badge_workflow.py
