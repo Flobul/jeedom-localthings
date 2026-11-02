@@ -1062,9 +1062,9 @@ class localthings extends eqLogic
     }
 
     /**
-     * Rafraîchit les équipements dont l'intervalle courant est écoulé.
+     * Indique si le plugin s'exécute dans le démon PHP.
      *
-     * @return void
+     * @return bool
      */
     public static function inDaemonMode()
     {
