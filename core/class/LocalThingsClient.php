@@ -325,7 +325,16 @@ class LocalThingsDeviceClient
                 }
                 $this->log('info', '[Session] ' . $host . ':' . (int) $port
                     . ' session maintenue invalide ; nouvelle négociation unique');
-                return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
+                try {
+                    return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
+                } catch (Throwable $retryError) {
+                    $this->logReconnectDiagnostic($host, (int) $port, $error, $retryError);
+                    // L'appareil est injoignable pendant la renégociation : on
+                    // propage l'erreur initiale (CoAP/OCF) plutôt que l'erreur
+                    // DTLS de la seconde tentative, qui n'apporte aucune
+                    // information supplémentaire à l'utilisateur.
+                    throw $error;
+                }
             }
         });
     }
@@ -790,6 +799,96 @@ class LocalThingsDeviceClient
         unset($this->sessionCache[$key]);
     }
 
+    /**
+     * Sonde sans état l'endpoint après l'échec d'une renégociation immédiate.
+     *
+     * La sonde utilise un port source éphémère et n'envoie jamais le cookie
+     * retourné par le serveur : elle ne crée donc pas une nouvelle session
+     * dans la table DTLS de l'appareil.
+     *
+     * @param string $host
+     * @param int $port
+     * @return array<int,array<string,mixed>>
+     */
+    protected function scanDtlsDiagnostic($host, $port)
+    {
+        return LocalThingsDtlsProbe::scan(
+            $host,
+            array((int) $port),
+            $this->openssl,
+            2.0,
+            $this->ownerPskCredential($host) !== null
+        );
+    }
+
+    /** Journalise un diagnostic corrélé sans masquer l'erreur fonctionnelle initiale. */
+    private function logReconnectDiagnostic($host, $port, Throwable $initialError, Throwable $retryError)
+    {
+        $retryKind = self::connectionFailureKind($retryError);
+        try {
+            $results = $this->scanDtlsDiagnostic($host, (int) $port);
+            $result = $results[(int) $port] ?? array('kind' => 'missing_result', 'attempts' => 0);
+            $probeKind = (string) ($result['kind'] ?? 'unknown');
+            if (in_array($probeKind, array('hello_verify_request', 'server_hello'), true)) {
+                $hypothesis = 'fresh_source_responds_after_fixed_source_failure';
+            } elseif ($probeKind === 'alert') {
+                $hypothesis = 'dtls_service_rejecting';
+            } elseif ($probeKind === 'no_response' && in_array($retryKind, array('udp_refused', 'dtls_refused'), true)) {
+                $hypothesis = 'service_or_udp_port_unavailable';
+            } elseif ($probeKind === 'no_response') {
+                $hypothesis = 'service_silent_or_network_loss';
+            } else {
+                $hypothesis = 'diagnostic_inconclusive';
+            }
+            $this->log('info', '[DTLS diagnostic] phase=after_reconnect_failure host=' . $host
+                . ' port=' . (int) $port
+                . ' initial=' . self::connectionFailureKind($initialError)
+                . ' reconnect=' . $retryKind
+                . ' fresh_source_probe=' . $probeKind
+                . ' attempts=' . (int) ($result['attempts'] ?? 0)
+                . (isset($result['local_port']) ? ' probe_local_port=' . (int) $result['local_port'] : '')
+                . (isset($result['responder_port']) ? ' responder_port=' . (int) $result['responder_port'] : '')
+                . (isset($result['alert']) ? ' alert=' . (int) $result['alert'] : '')
+                . ' hypothesis=' . $hypothesis);
+        } catch (Throwable $probeError) {
+            $this->log('info', '[DTLS diagnostic] phase=after_reconnect_failure host=' . $host
+                . ' port=' . (int) $port
+                . ' initial=' . self::connectionFailureKind($initialError)
+                . ' reconnect=' . $retryKind
+                . ' fresh_source_probe=unavailable'
+                . ' probe_failure=' . self::connectionFailureKind($probeError)
+                . ' hypothesis=diagnostic_inconclusive');
+        }
+    }
+
+    /** Classe une panne réseau sans exposer les détails privés du transport. */
+    private static function connectionFailureKind(Throwable $error)
+    {
+        $message = strtolower($error->getMessage());
+        if (strpos($message, 'errno=111') !== false || strpos($message, 'connection refused') !== false) {
+            return 'udp_refused';
+        }
+        if (strpos($message, 'connexion dtls refusée') !== false) {
+            return 'dtls_refused';
+        }
+        if (strpos($message, 'délai de réponse coap') !== false) {
+            return 'coap_timeout';
+        }
+        if (strpos($message, 'délai de négociation dtls') !== false) {
+            return 'dtls_handshake_timeout';
+        }
+        if (strpos($message, 'aucune représentation métier') !== false) {
+            return 'no_business_representation';
+        }
+        if (strpos($message, 'refus de lecture coap') !== false) {
+            return 'coap_access_denied';
+        }
+        if ($error instanceof LocalThingsDiscoveryCancelled) {
+            return 'cancelled';
+        }
+        return 'other';
+    }
+
     /** Referme toutes les sessions détenues par ce client. */
     public function closeSessions()
     {
@@ -878,6 +977,9 @@ class LocalThingsDeviceClient
                 } catch (LocalThingsDiscoveryCancelled $error) {
                     throw $error;
                 } catch (Throwable $error) {
+                    $this->log('info', '[DTLS diagnostic] phase=device_read session_source=' . $sessionSource
+                        . ' failure=' . self::connectionFailureKind($error)
+                        . ' next=individual_resources_same_session');
                     $this->log('info', '[Discovery] Lecture /device/0 échouée ; lecture authentifiée des ressources individuelles sur la même session');
                     $individualFallback = true;
                     $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0, true);

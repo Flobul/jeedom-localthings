@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## Version 0.7.2 (02/11/2026)
+
+- Lorsqu’un appareil est hors ligne, la renégociation DTLS de secours ne propage plus le message d’erreur « Connexion DTLS refusée » : l’erreur initiale (CoAP/OCF) est conservée et le détail OpenSSL passe en debug. En cas d’échec de la reconnexion immédiate, une sonde DTLS sans état depuis un port source éphémère journalise maintenant si le service répond, refuse ou reste silencieux, afin d’orienter le diagnostic entre une association de session possiblement bloquée et un service indisponible.
+
 ## Version 0.7.1 (30/10/2026)
 
 - La page Santé lit désormais l’état du démon PHP réel au lieu de l’ancienne tâche cron de rafraîchissement, ce qui évite d’afficher « Démon arrêté » alors qu’il fonctionne.

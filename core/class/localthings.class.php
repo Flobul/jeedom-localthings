@@ -23,7 +23,7 @@ require_once __DIR__ . '/LocalThingsDaemon.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.7.1';
+    public static $_pluginVersion = '0.7.2';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;

@@ -77,6 +77,11 @@ class LocalThingsDtlsProbe
                 $socket = @stream_socket_server('udp://' . $bindHost . ':0', $errno, $error, STREAM_SERVER_BIND);
                 $results[$port] = array('kind' => 'no_response', 'attempts' => 0);
                 if ($socket === false) { $results[$port]['kind'] = 'socket_error'; continue; }
+                $localName = stream_socket_get_name($socket, false);
+                $separator = is_string($localName) ? strrpos($localName, ':') : false;
+                if ($separator !== false) {
+                    $results[$port]['local_port'] = (int) substr($localName, $separator + 1);
+                }
                 stream_set_blocking($socket, false);
                 $sockets[$port] = $socket;
             }

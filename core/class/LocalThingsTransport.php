@@ -1197,7 +1197,7 @@ class LocalThingsDtlsClient
                 $error = $this->errorSummary();
                 $this->close();
                 $this->log(
-                    'warning',
+                    'debug',
                     __('[DTLS] Processus OpenSSL arrêté pendant le handshake', __FILE__)
                     . ($error !== '' ? ' : ' . $error : '')
                 );
