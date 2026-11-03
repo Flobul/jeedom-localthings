@@ -17,13 +17,14 @@ require_once __DIR__ . '/LocalThingsClient.php';
 require_once __DIR__ . '/LocalThingsCertificateDiagnostic.php';
 require_once __DIR__ . '/LocalThingsDaemonClient.php';
 require_once __DIR__ . '/LocalThingsDaemon.php';
+require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
 
 /**
  * Représente un équipement LocalThings et son intégration au cycle de vie Jeedom.
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.7.2';
+    public static $_pluginVersion = '0.7.3';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -451,6 +452,7 @@ class localthings extends eqLogic
         $lastUpdate = (int) ($device['last_update'] ?? time());
         $eqLogic->setConfiguration('last_communication', date('Y-m-d H:i:s', $lastUpdate));
         $eqLogic->setConfiguration('last_refresh', $lastUpdate);
+        $eqLogic->setConfiguration('offline_retry_failures', 0);
         $eqLogic->save();
 
         self::ensureConnectedCommand($eqLogic);
@@ -1163,16 +1165,34 @@ class localthings extends eqLogic
         foreach (self::byType(__CLASS__, true) as $eqLogic) {
             $online = self::equipmentIsOnline($eqLogic);
             $interval = self::pollIntervalSecondsForState($online);
+            $failureCount = 0;
+            if (!$online) {
+                $failureCount = (int) $eqLogic->getConfiguration('offline_retry_failures', 0);
+                $interval = LocalThingsOfflineBackoff::delaySeconds(
+                    $failureCount,
+                    $interval
+                );
+            }
             $lastRefresh = (int) $eqLogic->getConfiguration('last_refresh', 0);
             if ($lastRefresh > 0 && $now - $lastRefresh < $interval) {
                 continue;
             }
             try {
                 $eqLogic->refreshDirect();
+                if (!$online) {
+                    $eqLogic->setConfiguration('offline_retry_failures', 0);
+                    $eqLogic->save(true);
+                }
             } catch (Throwable $exception) {
                 $eqLogic->checkAndUpdateCmd('connected', 0);
                 $eqLogic->setConfiguration('last_error', $exception->getMessage());
                 $eqLogic->setConfiguration('last_refresh', time());
+                if (!$online) {
+                    $eqLogic->setConfiguration(
+                        'offline_retry_failures',
+                        LocalThingsOfflineBackoff::nextFailureCount($failureCount)
+                    );
+                }
                 $eqLogic->save(true);
                 log::add(__CLASS__, 'warning', $eqLogic->getHumanName() . ' : ' . $exception->getMessage());
             }
@@ -1405,6 +1425,12 @@ class localthings extends eqLogic
             $this->checkAndUpdateCmd('connected', 0);
             $this->setConfiguration('last_error', $exception->getMessage());
             $this->setConfiguration('last_refresh', time());
+            $this->setConfiguration(
+                'offline_retry_failures',
+                LocalThingsOfflineBackoff::nextFailureCount(
+                    (int) $this->getConfiguration('offline_retry_failures', 0)
+                )
+            );
             $this->save(true);
             throw $exception;
         }
@@ -1419,6 +1445,7 @@ class localthings extends eqLogic
         }
         $snapshot = self::deviceClient()->refresh($host, $port, $this->knownDeviceContext());
         self::registerSnapshot($snapshot);
+        $this->setConfiguration('offline_retry_failures', 0);
         return $snapshot;
     }
 

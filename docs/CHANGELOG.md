@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## Version 0.7.3 (03/11/2026)
+
+- Lorsqu’un appareil est hors ligne, les tentatives automatiques sont désormais rapprochées selon une cadence progressive bornée (30 s, 1 min, 2 min, 5 min, 10 min, 15 min, 20 min, 25 min, 30 min) avant de reprendre l’intervalle hors ligne configuré. Le compteur se remet à zéro dès qu’une lecture réussit.
+
 ## Version 0.7.2 (02/11/2026)
 
 - Lorsqu’un appareil est hors ligne, la renégociation DTLS de secours ne propage plus le message d’erreur « Connexion DTLS refusée » : l’erreur initiale (CoAP/OCF) est conservée et le détail OpenSSL passe en debug. En cas d’échec de la reconnexion immédiate, une sonde DTLS sans état depuis un port source éphémère journalise maintenant si le service répond, refuse ou reste silencieux, afin d’orienter le diagnostic entre une association de session possiblement bloquée et un service indisponible.
