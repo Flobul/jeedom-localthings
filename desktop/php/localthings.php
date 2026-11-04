@@ -12,6 +12,13 @@ $eqLogics = eqLogic::byType($plugin->getId());
     <div class="col-xs-12 eqLogicThumbnailDisplay">
         <legend><i class="fas fa-cog"></i> {{Gestion}}</legend>
         <div class="eqLogicThumbnailContainer">
+            <?php if (version_compare((string) jeedom::version(), '4.4.0', '>=')) { ?>
+                <div class="cursor eqLogicAction logoSecondary" data-action="createCommunityPost" data-plugin_id="localthings" role="button" tabindex="0" aria-label="{{Créer un sujet d'assistance sur Community Jeedom}}">
+                    <i class="fas fa-comments"></i>
+                    <br>
+                    <span style="color:var(--txt-color)">{{Community}}</span>
+                </div>
+            <?php } ?>
             <div class="cursor eqLogicAction logoSecondary" data-action="gotoPluginConf">
                 <i class="fas fa-wrench"></i><br>
                 <span>{{Configuration}}</span>
@@ -260,6 +267,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
         </div>
     </div>
 </div>
+<?php include_file('desktop', 'community', 'js', 'localthings'); ?>
 
 <?php include_file('desktop', 'localthings', 'js', 'localthings'); ?>
 <?php include_file('core', 'plugin.template', 'js'); ?>

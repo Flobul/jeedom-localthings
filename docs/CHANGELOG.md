@@ -2,6 +2,8 @@
 
 ## Non publié
 
+- Ajout d’un accès Community avec aperçu et diagnostic facultatif limité à des compteurs non sensibles.
+
 ## Version 0.7.3 (03/11/2026)
 
 - Lorsqu’un appareil est hors ligne, les tentatives automatiques sont désormais rapprochées selon une cadence progressive bornée (30 s, 1 min, 2 min, 5 min, 10 min, 15 min, 20 min, 25 min, 30 min) avant de reprendre l’intervalle hors ligne configuré. Le compteur se remet à zéro dès qu’une lecture réussit.

@@ -9,6 +9,8 @@ test -n "$info_version"
 test "$info_version" = "$class_version"
 test -z "$(git ls-files | grep -E '(^|/)\.DS_Store$' || true)"
 python3 .github/ci/test_release_guard.py
+node .github/ci/test_community_integration.js
+php .github/ci/test_community_diagnostics.php
 python3 .github/ci/test_release_workflow.py
 bash .github/ci/run_functional_tests.sh
 python3 .github/ci/test_badge_workflow.py
