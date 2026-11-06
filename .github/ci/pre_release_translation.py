@@ -10,11 +10,14 @@ import argparse
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
 RELEASE_ACTIONS = {"create-tag-and-release", "create-release"}
 MODES = {"disabled", "simulate", "enforce"}
+PLUGIN_DIRS = ("core", "desktop", "mobile", "plugin_info")
+TRANSLATABLE_SUFFIXES = {".php", ".js", ".json", ".html"}
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,34 @@ def _flatten(data: dict[str, Any], path: Path) -> dict[tuple[str, str], str]:
     return flattened
 
 
-def translation_gaps(root: Path) -> tuple[list[str], list[str]]:
+def _code_prompts(root: Path) -> set[str]:
+    """Match the prompt discovery rules pinned in jeedom/jeetranslate."""
+    prompts: set[str] = set()
+    php_pattern = re.compile(r'__\s*\(\s*((?P<separator>["\'])(?P<text>.*?)(?P=separator))\s*,\s*\S+\s*\)')
+    for directory in PLUGIN_DIRS:
+        base = root / directory
+        if not base.exists():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file() or path.suffix not in TRANSLATABLE_SUFFIXES:
+                continue
+            if path.name == "info.json" or (directory == "core" and "i18n" in path.relative_to(base).parts):
+                continue
+            try:
+                content = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise RuntimeError(f"Cannot scan {path}: {exc}") from exc
+            prompts.update(text for text in re.findall(r"{{(.*?)}}", content) if text)
+            if path.suffix == ".php":
+                for match in php_pattern.finditer(content):
+                    text = match.group("text")
+                    separator = match.group("separator")
+                    if not re.search(r"(^" + separator + r")|([^\\]" + separator + r")", text):
+                        prompts.add(text)
+    return prompts
+
+
+def translation_gaps(root: Path, core_source_path: Path | None = None) -> tuple[list[str], list[str]]:
     root = root.resolve()
     source_language, target_languages = _language_settings(root)
     i18n_dir = root / "core" / "i18n"
@@ -80,8 +110,16 @@ def translation_gaps(root: Path) -> tuple[list[str], list[str]]:
     if not source:
         raise RuntimeError(f"{source_path} contains no translation entries")
 
+    source_prompts = {key for _, key in source}
+    if core_source_path is not None:
+        core_source_path = core_source_path.resolve()
+        core_source = _flatten(_read_object(core_source_path), core_source_path)
+        source_prompts.update(key for _, key in core_source)
+
     missing: list[str] = []
     errors: list[str] = []
+    for prompt in sorted(_code_prompts(root) - source_prompts):
+        missing.append(f"source-catalog:{prompt}")
     for language in target_languages:
         target_path = i18n_dir / f"{language}.json"
         try:
@@ -104,6 +142,7 @@ def evaluate_gate(
     mode: str,
     translation_pr_open: bool,
     translation_attempt_exists: bool = False,
+    core_source_path: Path | None = None,
 ) -> GateDecision:
     if mode not in MODES:
         raise ValueError(f"unsupported pre-release translation mode: {mode}")
@@ -113,7 +152,7 @@ def evaluate_gate(
         return GateDecision(mode, release_action, True, False, "no-release-candidate", translation_pr_open, 0, (), ())
 
     try:
-        missing, errors = translation_gaps(root)
+        missing, errors = translation_gaps(root, core_source_path)
     except RuntimeError as exc:
         missing, errors = [], [str(exc)]
 
@@ -187,6 +226,7 @@ def main() -> int:
     parser.add_argument("--mode", choices=sorted(MODES), required=True)
     parser.add_argument("--translation-pr-open", choices=("true", "false"), required=True)
     parser.add_argument("--translation-attempt-exists", choices=("true", "false"), required=True)
+    parser.add_argument("--core-source", type=Path)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
@@ -197,6 +237,7 @@ def main() -> int:
         mode=args.mode,
         translation_pr_open=args.translation_pr_open == "true",
         translation_attempt_exists=args.translation_attempt_exists == "true",
+        core_source_path=args.core_source,
     )
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(asdict(decision), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

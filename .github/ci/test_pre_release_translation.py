@@ -65,6 +65,74 @@ class PreReleaseTranslationTests(unittest.TestCase):
         self.assertFalse(decision.dispatch_translation)
         self.assertEqual(decision.reason, "translations-complete")
 
+    def test_prompt_present_in_code_but_absent_from_source_catalog_blocks_release(self):
+        source = self.root / "core" / "class" / "fixture.class.php"
+        source.parent.mkdir(parents=True)
+        source.write_text("<?php __('Prompt absent du catalogue', __FILE__);\n", encoding="utf-8")
+
+        decision = gate.evaluate_gate(
+            root=self.root,
+            release_action="create-tag-and-release",
+            mode="enforce",
+            translation_pr_open=False,
+        )
+
+        self.assertFalse(decision.release_allowed)
+        self.assertTrue(decision.dispatch_translation)
+        self.assertEqual(decision.reason, "translations-required")
+        self.assertEqual(decision.missing_count, 1)
+        self.assertIn("source-catalog:Prompt absent du catalogue", decision.missing)
+
+    def test_catalog_update_after_translation_merge_unblocks_same_code_prompt(self):
+        prompt = "Prompt fusionné"
+        source = self.root / "desktop" / "php" / "fixture.php"
+        source.parent.mkdir(parents=True)
+        source.write_text(f"<?php __('{prompt}', __FILE__);\n", encoding="utf-8")
+
+        blocked = gate.evaluate_gate(
+            root=self.root,
+            release_action="create-release",
+            mode="enforce",
+            translation_pr_open=False,
+        )
+        self.assertFalse(blocked.release_allowed)
+
+        self.write_language("fr_FR", {"source.php": {"Bonjour": "Bonjour", prompt: prompt}})
+        self.write_language("en_US", {"source.php": {"Bonjour": "Hello", prompt: "Merged prompt"}})
+        self.write_language("de_DE", {"source.php": {"Bonjour": "Hallo", prompt: "Zusammengeführter Text"}})
+        resumed = gate.evaluate_gate(
+            root=self.root,
+            release_action="create-release",
+            mode="enforce",
+            translation_pr_open=False,
+        )
+
+        self.assertTrue(resumed.release_allowed)
+        self.assertFalse(resumed.dispatch_translation)
+        self.assertEqual(resumed.reason, "translations-complete")
+
+    def test_prompt_supplied_by_pinned_core_catalog_is_not_missing(self):
+        source = self.root / "core" / "class" / "fixture.class.php"
+        source.parent.mkdir(parents=True)
+        source.write_text("<?php __('Prompt du core', __FILE__);\n", encoding="utf-8")
+        core_catalog = self.root / "pinned-core-fr_FR.json"
+        core_catalog.write_text(
+            json.dumps({"core/class/core.class.php": {"Prompt du core": "Prompt du core"}}) + "\n",
+            encoding="utf-8",
+        )
+
+        decision = gate.evaluate_gate(
+            root=self.root,
+            release_action="create-tag-and-release",
+            mode="enforce",
+            translation_pr_open=False,
+            core_source_path=core_catalog,
+        )
+
+        self.assertTrue(decision.release_allowed)
+        self.assertFalse(decision.dispatch_translation)
+        self.assertEqual(decision.reason, "translations-complete")
+
     def test_missing_translation_blocks_and_requests_generation(self):
         self.write_language("fr_FR", {"source.php": {"Bonjour": "Bonjour", "Nouveau": "Nouveau"}})
         decision = gate.evaluate_gate(

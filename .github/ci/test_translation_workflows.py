@@ -54,6 +54,9 @@ class TranslationWorkflowSeparationTests(unittest.TestCase):
         self.assertIn('PRE_RELEASE_TRANSLATION_MODE', workflow)
         self.assertIn('test_pre_release_translation.py', workflow)
         self.assertIn('pre_release_translation.py', workflow)
+        self.assertIn("repository: jeedom/core", workflow)
+        self.assertIn("ref: '90a95f1dcef74a65d77374a1fed427541032fe82'", workflow)
+        self.assertIn('--core-source .ci/jeedom-core/core/i18n/fr_FR.json', workflow)
         self.assertIn("needs.plan.outputs.translation_ready == 'true'", workflow)
 
     def test_release_workflow_never_auto_merges_translation_pr(self):
