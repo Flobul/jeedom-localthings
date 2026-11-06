@@ -2,7 +2,11 @@
 
 ## Non publié
 
+## Version 0.7.4 (06/11/2026)
+
+- La cadence de reconnexion accélérée démarre désormais dès le premier échec d’un appareil précédemment en ligne, au lieu d’attendre d’abord tout l’intervalle hors ligne configuré.
 - Ajout d’un accès Community avec aperçu et diagnostic facultatif limité à des compteurs non sensibles.
+
 
 ## Version 0.7.3 (03/11/2026)
 

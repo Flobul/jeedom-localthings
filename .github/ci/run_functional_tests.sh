@@ -52,6 +52,7 @@ run_test "CoAP response correlation, retries and block transfer" php .github/ci/
 run_test "UDP relay and DTLS peer pinning" php .github/ci/functional/udp_relay_test.php
 run_test "Discovery lifecycle and error recovery" run_discovery_test
 run_test "LocalThings daemon IPC lifecycle" php .github/ci/functional/daemon_ipc_test.php
+run_test "Offline retry starts immediately after the first failure" php .github/ci/functional/offline_backoff_test.php
 run_test "Cycle mapping refuses opaque guessed values" php .github/ci/functional/cycle_mapping_test.php
 run_test "DTLS probe with synthetic loopback responders" python3 .github/ci/functional/dtls_probe_test.py
 

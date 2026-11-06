@@ -24,6 +24,10 @@ require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
  */
 class localthings extends eqLogic
 {
+    public static $_pluginVersion = '0.7.4';
+    public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
+    private static $daemonDeviceClient = null;
+    private static $discoveryLease = null;
 
     /**
      * Return privacy-safe aggregate diagnostics for a Community support post.
@@ -52,11 +56,6 @@ class localthings extends eqLogic
 
         return implode($_separator, $lines) . $_separator;
     }
-
-    public static $_pluginVersion = '0.7.3';
-    public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
-    private static $daemonDeviceClient = null;
-    private static $discoveryLease = null;
 
     /**
      * Retourne le répertoire des ressources distribuées avec le plugin.
@@ -1216,12 +1215,10 @@ class localthings extends eqLogic
                 $eqLogic->checkAndUpdateCmd('connected', 0);
                 $eqLogic->setConfiguration('last_error', $exception->getMessage());
                 $eqLogic->setConfiguration('last_refresh', time());
-                if (!$online) {
-                    $eqLogic->setConfiguration(
-                        'offline_retry_failures',
-                        LocalThingsOfflineBackoff::nextFailureCount($failureCount)
-                    );
-                }
+                $eqLogic->setConfiguration(
+                    'offline_retry_failures',
+                    LocalThingsOfflineBackoff::nextFailureCount($failureCount)
+                );
                 $eqLogic->save(true);
                 log::add(__CLASS__, 'warning', $eqLogic->getHumanName() . ' : ' . $exception->getMessage());
             }
