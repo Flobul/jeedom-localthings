@@ -38,6 +38,13 @@ class TranslationWorkflowSeparationTests(unittest.TestCase):
         self.assertIn("steps.deepl.outputs.configured == 'true'", workflow)
         self.assertIn('peter-evans/create-pull-request@v8', workflow)
         self.assertNotIn('::error::Translation blocked', workflow)
+        snapshot = workflow.index('preserve_manual_i18n.py snapshot')
+        generation = workflow.index('python -m jeetranslate')
+        restore = workflow.index('preserve_manual_i18n.py restore')
+        pull_request = workflow.index('peter-evans/create-pull-request@v8')
+        self.assertLess(snapshot, generation)
+        self.assertLess(generation, restore)
+        self.assertLess(restore, pull_request)
 
     def test_translation_mode_default_is_exactly_simulate(self):
         import re

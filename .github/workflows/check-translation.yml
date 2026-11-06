@@ -11,5 +11,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test translation workflow separation
         run: python3 .github/ci/test_translation_workflows.py
+      - name: Test preservation of manual translations
+        run: python3 .github/ci/test_preserve_manual_i18n.py
       - name: Validate existing i18n files and placeholders
         run: python3 .github/ci/validate_i18n.py --root . --expected de_DE,en_US,es_ES,fr_FR,it_IT,pt_PT --require-languages
