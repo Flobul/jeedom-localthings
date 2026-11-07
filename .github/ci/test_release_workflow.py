@@ -31,6 +31,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release_guard.py", text)
         self.assertIn("create-tag-and-release", text)
         self.assertIn("needs.plan.outputs.action != 'none'", text)
+        self.assertIn(
+            'gh workflow run translation.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"',
+            text,
+        )
         guard_text = (ROOT / ".github" / "ci" / "release_guard.py").read_text(encoding="utf-8")
         self.assertIn('"create-release"', guard_text)
         self.assertIn("git show-ref --verify", text)
