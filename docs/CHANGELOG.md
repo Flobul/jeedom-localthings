@@ -2,6 +2,15 @@
 
 ## Non publié
 
+## Version 0.7.5 (07/11/2026)
+
+- La récupération OwnerPSK accepte désormais les clés de 16 ou 32 octets, soit 32 ou 64 caractères hexadécimaux, comme dans l’implémentation de référence.
+- Après un échec de handshake DTLS (`unknown_ca` ou timeout), l’interface propose directement l’import d’une credential OwnerPSK déjà provisionnée et explique la vérification réseau à effectuer.
+- Lorsqu’un port DTLS mémorisé devient obsolète, le plugin redécouvre automatiquement le port annoncé publiquement par l’appareil avant de retenter la lecture.
+- Les ressources OCF préfixées par un UUID sont désormais matérialisées comme sous-équipements Jeedom distincts, lus et commandés sur la même session DTLS persistante.
+- Les équipements EHS exposés par une passerelle MIM-H04EN reçoivent un mapping dédié pour la température extérieure, la puissance instantanée, les compteurs d’énergie, la chaleur produite, l’appoint électrique et la vanne trois voies.
+- La documentation précise que Jeedom doit se trouver sur le même réseau local que l’appareil, sans bridge Docker opaque ; un réseau `macvlan` sur le même sous-réseau est recommandé si Jeedom s’exécute en conteneur.
+
 ## Version 0.7.4 (06/11/2026)
 
 - La cadence de reconnexion accélérée démarre désormais dès le premier échec d’un appareil précédemment en ligne, au lieu d’attendre d’abord tout l’intervalle hors ligne configuré.

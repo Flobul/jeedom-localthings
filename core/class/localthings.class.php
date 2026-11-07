@@ -24,7 +24,7 @@ require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.7.4';
+    public static $_pluginVersion = '0.7.5';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -451,7 +451,8 @@ class localthings extends eqLogic
             throw new InvalidArgumentException(__('Identifiant d’appareil invalide', __FILE__));
         }
         $eqLogic = self::byDeviceId($deviceId);
-        if (!is_object($eqLogic)) {
+        $subdeviceUuid = trim((string) ($device['subdevice_uuid'] ?? ''));
+        if (!is_object($eqLogic) && $subdeviceUuid === '') {
             $eqLogic = self::byEndpoint(
                 (string) ($device['host'] ?? ''),
                 (int) ($device['port'] ?? 0)
@@ -467,6 +468,8 @@ class localthings extends eqLogic
             $eqLogic->setIsVisible(1);
         }
         $eqLogic->setConfiguration('device_id', $deviceId);
+        $eqLogic->setConfiguration('parent_device_id', (string) ($device['parent_device_id'] ?? ''));
+        $eqLogic->setConfiguration('subdevice_uuid', $subdeviceUuid);
         $eqLogic->setConfiguration('serial', (string) ($device['serial'] ?? ''));
         $eqLogic->setConfiguration('host', (string) ($device['host'] ?? ''));
         $eqLogic->setConfiguration('port', (int) ($device['port'] ?? 0));
@@ -492,11 +495,18 @@ class localthings extends eqLogic
         if ($isNew) {
             log::add(__CLASS__, 'info', __('Nouvel appareil local découvert : ', __FILE__) . $eqLogic->getHumanName());
         }
+        $subdeviceSummaries = array();
+        foreach ((array) ($snapshot['subdevices'] ?? array()) as $subdeviceSnapshot) {
+            if (is_array($subdeviceSnapshot)) {
+                $subdeviceSummaries[] = self::registerSnapshot($subdeviceSnapshot);
+            }
+        }
         return array(
             'id' => $eqLogic->getId(),
             'name' => $eqLogic->getName(),
             'device_id' => $deviceId,
             'host' => $eqLogic->getConfiguration('host'),
+            'subdevices' => $subdeviceSummaries,
         );
     }
 
@@ -1423,6 +1433,8 @@ class localthings extends eqLogic
     {
         return array(
             'device_id' => (string) $this->getConfiguration('device_id', ''),
+            'parent_device_id' => (string) $this->getConfiguration('parent_device_id', ''),
+            'subdevice_uuid' => (string) $this->getConfiguration('subdevice_uuid', ''),
             'serial' => (string) $this->getConfiguration('serial', ''),
             'auth_mode' => (string) $this->getConfiguration('auth_mode', 'certificate'),
             'name' => (string) $this->getName(),

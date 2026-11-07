@@ -62,7 +62,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
                     <input id="in_ownerPskOwner" class="form-control" type="text" autocomplete="off" spellcheck="false">
                     <label for="in_ownerPskDevice">{{UUID OCF de l’appareil}}</label>
                     <input id="in_ownerPskDevice" class="form-control" type="text" autocomplete="off" spellcheck="false">
-                    <label for="in_ownerPskKey">{{OwnerPSK (32 caractères hexadécimaux)}}</label>
+                    <label for="in_ownerPskKey">{{OwnerPSK (32 ou 64 caractères hexadécimaux)}}</label>
                     <input id="in_ownerPskKey" class="form-control" type="password" autocomplete="new-password" spellcheck="false">
                     <button type="button" id="bt_ownerPskImport" class="btn btn-primary">{{Vérifier et enregistrer la clé}}</button>
                 </details>

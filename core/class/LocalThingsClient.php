@@ -321,7 +321,7 @@ class LocalThingsDeviceClient
                 return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
             } catch (Throwable $error) {
                 if (!$usedCachedSession) {
-                    throw $error;
+                    return $this->recoverRefreshEndpoint($host, (int) $port, $knownDevice, $error);
                 }
                 $this->log('info', '[Session] ' . $host . ':' . (int) $port
                     . ' session maintenue invalide ; nouvelle négociation unique');
@@ -329,14 +329,38 @@ class LocalThingsDeviceClient
                     return $this->readSnapshot($host, (int) $port, 12.0, false, $knownDevice);
                 } catch (Throwable $retryError) {
                     $this->logReconnectDiagnostic($host, (int) $port, $error, $retryError);
-                    // L'appareil est injoignable pendant la renégociation : on
-                    // propage l'erreur initiale (CoAP/OCF) plutôt que l'erreur
-                    // DTLS de la seconde tentative, qui n'apporte aucune
-                    // information supplémentaire à l'utilisateur.
-                    throw $error;
+                    return $this->recoverRefreshEndpoint($host, (int) $port, $knownDevice, $error);
                 }
             }
         });
+    }
+
+    /** Retrouve un endpoint annoncé publiquement après l'échec du port mémorisé. */
+    private function recoverRefreshEndpoint($host, $stalePort, $knownDevice, Throwable $initialError)
+    {
+        $logger = function ($level, $message) { $this->log($level, $message); };
+        try {
+            $advertised = (new LocalThingsOcfDiagnostic($host))->discoverPorts($logger);
+        } catch (Throwable $discoveryError) {
+            $this->log('info', '[Reconnect] Redécouverte publique impossible : ' . $discoveryError->getMessage());
+            throw $initialError;
+        }
+        $ports = self::recoveryPorts($advertised, $stalePort);
+        if (!$ports) {
+            $this->log('info', '[Reconnect] Aucun nouveau port DTLS annoncé pour ' . $host);
+            throw $initialError;
+        }
+        foreach ($ports as $port) {
+            $this->log('info', '[Reconnect] Port DTLS redécouvert pour ' . $host . ' : '
+                . (int) $stalePort . ' -> ' . $port);
+            try {
+                return $this->readSnapshot($host, $port, 12.0, false, $knownDevice);
+            } catch (Throwable $recoveryError) {
+                $this->log('info', '[Reconnect] Endpoint annoncé ' . $host . ':' . $port
+                    . ' non exploitable : ' . self::connectionFailureKind($recoveryError));
+            }
+        }
+        throw $initialError;
     }
 
     /**
@@ -400,7 +424,14 @@ class LocalThingsDeviceClient
             } else {
                 $session->connect(12.0);
             }
-            $resources = $this->readResources($session);
+            $subdeviceUuid = strtolower(trim((string) ($recipe['subdevice_uuid'] ?? '')));
+            if ($subdeviceUuid !== ''
+                && !preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $subdeviceUuid)) {
+                throw new InvalidArgumentException(__('UUID de sous-équipement invalide', __FILE__));
+            }
+            $resources = $subdeviceUuid === ''
+                ? $this->readResources($session)
+                : $this->readResources($session, array($subdeviceUuid, 'device', '0'));
             $remoteControlEnabled = $this->mapper->remoteControlEnabled($resources);
             $this->log(
                 'debug',
@@ -415,11 +446,16 @@ class LocalThingsDeviceClient
             }
             $write = $this->mapper->buildWrite($recipe, $value, $resources);
             $href = '/' . implode('/', $write['path']);
+            $wirePath = $write['path'];
+            if ($subdeviceUuid !== '') {
+                array_unshift($wirePath, $subdeviceUuid);
+            }
+            $wireHref = '/' . implode('/', $wirePath);
             $this->log(
                 'info',
-                '[Command] POST ' . $href . ' body=' . $this->jsonForLog($write['body'])
+                '[Command] POST ' . $wireHref . ' body=' . $this->jsonForLog($write['body'])
             );
-            list($code, $response) = $session->post($write['path'], $write['body'], 15.0);
+            list($code, $response) = $session->post($wirePath, $write['body'], 15.0);
             if (($code >> 5) !== 2) {
                 throw new LocalThingsCommandRejectedException(sprintf(
                     __('Écriture CoAP refusée (%s)', __FILE__),
@@ -440,7 +476,7 @@ class LocalThingsDeviceClient
 
             $verification = $this->verifyWrite(
                 $session,
-                $write['path'],
+                $wirePath,
                 $write['body']
             );
             if ($verification['matched'] === false) {
@@ -925,6 +961,11 @@ class LocalThingsDeviceClient
         if ((int) $port < 1 || (int) $port > 65535) {
             throw new InvalidArgumentException(__('Port LocalThings invalide', __FILE__));
         }
+        $subdeviceUuid = strtolower(trim((string) ($knownDevice['subdevice_uuid'] ?? '')));
+        if ($subdeviceUuid !== ''
+            && !preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $subdeviceUuid)) {
+            throw new InvalidArgumentException(__('UUID de sous-équipement invalide', __FILE__));
+        }
         $readOnly = ($knownDevice['auth_mode'] ?? '') === self::AUTH_READ_ONLY;
         $sessionKey = $this->sessionCacheKey($host, (int) $port, $readOnly);
         $keepAlive = false;
@@ -966,10 +1007,14 @@ class LocalThingsDeviceClient
                 . ' localPort=' . $session->localPort()
                 . ' session_duration=' . $this->durationMs($started) . ' ms');
             }
-            $stage = $readOnly ? 'lecture des ressources OCF annoncées' : 'lecture CoAP /device/0';
+            $stage = $subdeviceUuid !== ''
+                ? 'lecture du sous-équipement UUID'
+                : ($readOnly ? 'lecture des ressources OCF annoncées' : 'lecture CoAP /device/0');
             $individualFallback = false;
             $resourceStart = microtime(true);
-            if ($readOnly) {
+            if ($subdeviceUuid !== '') {
+                $resources = $this->readResources($session, array($subdeviceUuid, 'device', '0'));
+            } elseif ($readOnly) {
                 $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0);
             } else {
                 try {
@@ -991,7 +1036,7 @@ class LocalThingsDeviceClient
                 . ' duration=' . $this->durationMs($resourceStart) . ' ms');
             $stage = 'identité et commandes';
             $identity = array();
-            if ($includeIdentity) {
+            if ($includeIdentity && $subdeviceUuid === '') {
                 usleep(200000);
                 $identity = $this->readIdentity($session);
             }
@@ -1004,11 +1049,20 @@ class LocalThingsDeviceClient
             }
             $ocfDeviceId = self::normalizeIdentifier($identity['device_id'] ?? '');
             $knownDeviceId = self::normalizeIdentifier($knownDevice['device_id'] ?? '');
-            $deviceId = $serial !== ''
-                ? $serial
-                : ($ocfDeviceId !== ''
-                    ? $ocfDeviceId
-                    : ($knownDeviceId !== '' ? $knownDeviceId : $host . ':' . $port));
+            if ($subdeviceUuid !== '') {
+                $parentDeviceId = self::normalizeIdentifier($knownDevice['parent_device_id'] ?? $knownDeviceId);
+                if ($parentDeviceId === '') {
+                    throw new RuntimeException(__('Identité de la passerelle parente absente', __FILE__));
+                }
+                $deviceId = $parentDeviceId . ':' . $subdeviceUuid;
+            } else {
+                $parentDeviceId = '';
+                $deviceId = $serial !== ''
+                    ? $serial
+                    : ($ocfDeviceId !== ''
+                        ? $ocfDeviceId
+                        : ($knownDeviceId !== '' ? $knownDeviceId : $host . ':' . $port));
+            }
             $typeIdentity = $identity;
             if (empty($typeIdentity['model']) && !empty($knownDevice['model'])) {
                 $typeIdentity['model'] = $knownDevice['model'];
@@ -1035,6 +1089,9 @@ class LocalThingsDeviceClient
                 $name = 'Samsung ' . str_replace('_', ' ', $deviceType);
             }
             $mapped = $this->mapper->map($resources);
+            if ($subdeviceUuid !== '') {
+                self::decorateSubdeviceActions($mapped['entities'], $subdeviceUuid);
+            }
             if ($individualFallback && !$this->mapper->map(array_filter($resources, function ($rep, $href) {
                 return self::isBusinessResource($href, $rep);
             }, ARRAY_FILTER_USE_BOTH))['entities']) {
@@ -1068,7 +1125,7 @@ class LocalThingsDeviceClient
                     count($mapped['entities'])
                 )
             );
-            return array(
+            $snapshot = array(
                 'device' => array(
                     'device_id' => $deviceId,
                     'host' => $host,
@@ -1085,11 +1142,33 @@ class LocalThingsDeviceClient
                     'connected' => true,
                     'last_update' => time(),
                     'last_error' => '',
+                    'parent_device_id' => $parentDeviceId,
+                    'subdevice_uuid' => $subdeviceUuid,
                 ),
                 'entities' => $mapped['entities'],
                 'states' => $mapped['states'],
                 'resources' => $resources,
             );
+            $subdevices = array();
+            if ($includeIdentity && $subdeviceUuid === '') {
+                $ids = self::subdeviceIds($resources, $identity['raw']['/oic/res'] ?? array());
+                foreach ($ids as $uuid) {
+                    try {
+                        $subdevices[] = $this->readSnapshot($host, $port, 12.0, false, array(
+                            'device_id' => $deviceId,
+                            'parent_device_id' => $deviceId,
+                            'subdevice_uuid' => $uuid,
+                            'auth_mode' => $snapshot['device']['auth_mode'],
+                            'manufacturer' => $snapshot['device']['manufacturer'],
+                        ), $session);
+                    } catch (Throwable $subdeviceError) {
+                        $this->log('info', '[Subdevice] UUID ' . $this->redactIdentifier($uuid)
+                            . ' non matérialisé : ' . self::connectionFailureKind($subdeviceError));
+                    }
+                }
+            }
+            $snapshot['subdevices'] = $subdevices;
+            return $snapshot;
         } catch (Throwable $exception) {
             $this->log('info', '[Diagnostic] ' . $host . ':' . $port
                 . ' ; étape en échec=' . $stage . ' ; ' . $exception->getMessage());
@@ -1101,7 +1180,9 @@ class LocalThingsDeviceClient
         } finally {
             $this->log('info', '[Refresh] host=' . $host . ' port=' . (int) $port
                 . ' total_duration=' . $this->durationMs($started) . ' ms');
-            if ($keepAlive && $connectedSession === null) {
+            if ($connectedSession !== null) {
+                // La session appartient à l'appelant (diagnostic ou passerelle racine).
+            } elseif ($keepAlive) {
                 $this->cacheSession($sessionKey, $session);
             } else {
                 $session->close();
@@ -1115,23 +1196,26 @@ class LocalThingsDeviceClient
      * @param LocalThingsSession $session Session CoAP active.
      * @return array<string,array<string,mixed>> Ressources indexées par URI.
      */
-    private function readResources(LocalThingsSession $session)
+    private function readResources(LocalThingsSession $session, $path = array('device', '0'))
     {
-        list($code, $payload) = $session->get(array('device', '0'), 35.0);
+        $path = array_values((array) $path);
+        $href = '/' . implode('/', $path);
+        list($code, $payload) = $session->get($path, 35.0);
         $this->log(
             'info',
-            '[CoAP] GET /device/0 -> ' . LocalThingsCoap::formatCode($code)
+            '[CoAP] GET ' . $href . ' -> ' . LocalThingsCoap::formatCode($code)
             . ', ' . strlen($payload) . ' octets'
         );
         if (($code >> 5) !== 2 || $payload === '') {
             throw new RuntimeException(sprintf(
-                __('GET /device/0 a répondu %s', __FILE__),
+                __('GET %1$s a répondu %2$s', __FILE__),
+                $href,
                 LocalThingsCoap::formatCode($code)
             ));
         }
         $decoded = LocalThingsCbor::decode($payload);
         if (!is_array($decoded)) {
-            throw new RuntimeException(__('La réponse /device/0 est invalide', __FILE__));
+            throw new RuntimeException(sprintf(__('La réponse %s est invalide', __FILE__), $href));
         }
         $resources = array();
         foreach (array_slice($decoded, 1) as $entry) {
@@ -1141,13 +1225,56 @@ class LocalThingsDeviceClient
             $resources[(string) $entry['href']] = $entry['rep'];
         }
         if (count($resources) === 0) {
-            throw new RuntimeException(__('La réponse /device/0 ne contient aucune ressource', __FILE__));
+            throw new RuntimeException(sprintf(__('La réponse %s ne contient aucune ressource', __FILE__), $href));
         }
         $this->log(
             'debug',
-            sprintf(__('[CBOR] /device/0 décodé : %d ressources', __FILE__), count($resources))
+            sprintf(__('[CBOR] %1$s décodé : %2$d ressources', __FILE__), $href, count($resources))
         );
         return $resources;
+    }
+
+    /** Identifiants UUID de sous-équipements annoncés par la racine. */
+    public static function subdeviceIds($resources, $oicRes)
+    {
+        $ids = array();
+        $listed = $resources['/subdevices/vs/0']['x.com.samsung.da.subdeviceIdList'] ?? array();
+        foreach (is_array($listed) ? $listed : array() as $candidate) {
+            self::appendSubdeviceId($ids, $candidate);
+        }
+        foreach ((array) $oicRes as $entry) {
+            if (!is_array($entry)) { continue; }
+            $links = isset($entry['links']) ? (array) $entry['links'] : array($entry);
+            foreach ($links as $link) {
+                $href = is_array($link) ? (string) ($link['href'] ?? '') : '';
+                if (preg_match('~^/([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})/~D', $href, $matches)) {
+                    self::appendSubdeviceId($ids, $matches[1]);
+                }
+            }
+        }
+        return array_values($ids);
+    }
+
+    private static function appendSubdeviceId(&$ids, $candidate)
+    {
+        $candidate = strtolower(trim((string) $candidate));
+        if (preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $candidate)) {
+            $ids[$candidate] = $candidate;
+        }
+    }
+
+    /** Ajoute le namespace physique aux recettes, sans modifier les clés Jeedom canoniques. */
+    private static function decorateSubdeviceActions(&$entities, $subdeviceUuid)
+    {
+        foreach ($entities as &$entity) {
+            foreach ($entity['actions'] ?? array() as &$action) {
+                if (isset($action['recipe']) && is_array($action['recipe'])) {
+                    $action['recipe']['subdevice_uuid'] = $subdeviceUuid;
+                }
+            }
+            unset($action);
+        }
+        unset($entity);
     }
 
     /** Lit les représentations annoncées, avec repli borné si /device/0 ne les agrège pas. */
@@ -1448,6 +1575,26 @@ class LocalThingsDeviceClient
             $ports = array_merge($ports, self::PROBE_PORTS);
         }
         return array_values(array_unique($ports));
+    }
+
+    /**
+     * Normalise les ports annoncés pour une récupération, sans rejouer le port en échec.
+     *
+     * @param mixed $advertisedPorts
+     * @param int $stalePort
+     * @return int[]
+     */
+    public static function recoveryPorts($advertisedPorts, $stalePort)
+    {
+        $ports = array();
+        foreach ((array) $advertisedPorts as $port) {
+            $port = (int) $port;
+            if ($port < 1 || $port > 65535 || $port === (int) $stalePort) {
+                continue;
+            }
+            $ports[$port] = $port;
+        }
+        return array_values($ports);
     }
 
     /**

@@ -1401,6 +1401,13 @@ class LocalThingsMapper
      */
     private function skipFallbackField($href, $field, $resources)
     {
+        if ($href === '/energy/consumption/vs/0'
+            && $field === 'x.com.samsung.da.cumulativePower'
+            && array_key_exists('x.com.samsung.da.cumulativeConsumption', $resources[$href] ?? array())
+            && (string) ($resources[$href]['x.com.samsung.da.cumulativeConsumption'] ?? '')
+                === (string) ($resources[$href]['x.com.samsung.da.cumulativePower'] ?? '')) {
+            return true;
+        }
         if (
             $href === '/sensors/vs/0'
             && $field === 'x.com.samsung.da.cleanLevel'
@@ -1483,6 +1490,16 @@ class LocalThingsMapper
             if ($sourceUnit === 'J') {
                 return round(((float) $value) / 3600000, 3);
             }
+            if ($sourceUnit === '' || $sourceUnit === 'Wh') {
+                return round(((float) $value) / 1000, 3);
+            }
+            return (float) $value;
+        }
+        if (is_numeric($value) && preg_match('/cumulativeGeneration$/i', $field)) {
+            $sourceUnit = $this->explicitUnit($field, $representation);
+            if ($sourceUnit === 'kWh') { return (float) $value; }
+            if ($sourceUnit === 'MWh') { return round(((float) $value) * 1000, 3); }
+            if ($sourceUnit === 'J') { return round(((float) $value) / 3600000, 3); }
             if ($sourceUnit === '' || $sourceUnit === 'Wh') {
                 return round(((float) $value) / 1000, 3);
             }
@@ -1763,6 +1780,13 @@ class LocalThingsMapper
             '/temperatures/indoor/vs/0|x.com.samsung.da.desired' => __('Consigne intérieure', __FILE__),
             '/temperatures/dhw/vs/0|x.com.samsung.da.current' => __('Température de l’eau chaude', __FILE__),
             '/temperatures/dhw/vs/0|x.com.samsung.da.desired' => __('Consigne d’eau chaude', __FILE__),
+            '/temperatures/outside/vs/0|x.com.samsung.da.current' => __('Température extérieure', __FILE__),
+            '/energy/consumption/vs/0|x.com.samsung.da.instantaneousPower' => __('Puissance instantanée', __FILE__),
+            '/energy/consumption/vs/0|x.com.samsung.da.cumulativeConsumption' => __('Consommation cumulée', __FILE__),
+            '/energy/consumption/vs/0|x.com.samsung.da.cumulativePower' => __('Consommation cumulée', __FILE__),
+            '/energy/generation/vs/0|x.com.samsung.da.cumulativeGeneration' => __('Chaleur produite', __FILE__),
+            '/controllerstatus/ehs/vs/0|x.com.samsung.da.ehs.boosterHeater' => __('Appoint électrique', __FILE__),
+            '/controllerstatus/ehs/vs/0|x.com.samsung.da.ehs.3wayValve' => __('Vanne trois voies', __FILE__),
             '/option/outgoing/vs/0|x.com.samsung.da.away' => __('Mode absence', __FILE__),
             '/option/muteonce/vs/0|muteonce' => __('Son', __FILE__),
             '/washer/vs/0|x.com.samsung.da.waterTemperature' => __('Température de lavage', __FILE__),
@@ -2083,7 +2107,7 @@ class LocalThingsMapper
             return 'L';
         }
         $explicit = $this->explicitUnit($field, $representation);
-        if (preg_match('/cumulative(?:Power|Consumption)/i', $field)) {
+        if (preg_match('/cumulative(?:Power|Consumption|Generation)/i', $field)) {
             return in_array($explicit, array('Wh', 'kWh', 'MWh', 'J', ''), true) ? 'kWh' : $explicit;
         }
         if ($explicit !== '') {
@@ -2175,6 +2199,7 @@ class LocalThingsMapper
         if (strpos($fieldKey, 'cumulative') !== false) {
             $candidateKeys[] = 'cumulativeunit';
             $candidateKeys[] = 'cumulativepowerunit';
+            $candidateKeys[] = 'cumulativegenerationunit';
         }
         if (strpos($fieldKey, 'temperature') !== false) {
             $candidateKeys[] = 'temperatureunit';

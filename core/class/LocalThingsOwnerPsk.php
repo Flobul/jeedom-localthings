@@ -29,8 +29,8 @@ class LocalThingsOwnerPsk
             throw new InvalidArgumentException(__('UUID propriétaire incompatible avec le transport OpenSSL : octet nul', __FILE__));
         }
         if (!isset($credential['key']) || !is_string($credential['key'])
-            || !preg_match('/^[a-fA-F0-9]{32}$/D', $credential['key'])) {
-            throw new InvalidArgumentException(__('OwnerPSK attendue : 32 caractères hexadécimaux (16 octets)', __FILE__));
+            || !preg_match('/^(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{64})$/D', $credential['key'])) {
+            throw new InvalidArgumentException(__('OwnerPSK attendue : 32 ou 64 caractères hexadécimaux (16 ou 32 octets)', __FILE__));
         }
         return array('owner_uuid' => $credential['owner_uuid'], 'device_uuid' => $credential['device_uuid'],
             'key' => strtolower($credential['key']));

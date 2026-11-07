@@ -13,11 +13,15 @@ import time
 CIPHER = b'ECDHE-PSK-AES128-CBC-SHA256:@SECLEVEL=0'
 
 
+def validate_credential(identity, key):
+    if len(identity) != 16 or b'\0' in identity or len(key) not in (16, 32):
+        raise ValueError('invalid credential')
+
+
 class Transport:
     def __init__(self, host, port, source_port, identity, key):
         ipaddress.IPv4Address(host)
-        if len(identity) != 16 or b'\0' in identity or len(key) != 16:
-            raise ValueError('invalid credential')
+        validate_credential(identity, key)
         if not 1 <= port <= 65535 or not 0 <= source_port <= 65535:
             raise ValueError('invalid port')
         self.lib = C.CDLL(ctypes.util.find_library('ssl'))

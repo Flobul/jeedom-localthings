@@ -33,6 +33,28 @@
   let certificateBusy = false;
   let scanGeneration = 0;
 
+  function ownerPskGuidance(errors) {
+    const messages = Array.isArray(errors) ? errors.map(String) : [];
+    const relevant = messages.some(function (message) {
+      return /unknown_ca|unknown ca|timeout|timed out|délai dépassé/i.test(message);
+    });
+    if (!relevant) return false;
+
+    const panel = document.getElementById("localthings-ownerpsk-panel");
+    if (panel) {
+      panel.style.display = "block";
+      const details = panel.querySelector("details");
+      if (details) details.open = true;
+    }
+    const output = document.getElementById("localthings-ownerpsk-result");
+    if (output) {
+      output.textContent = "{{Le handshake DTLS n’a pas abouti. Si cet appareil utilise OwnerPSK, vous pouvez importer ici une clé déjà provisionnée. Vérifiez aussi que Jeedom se trouve sur le même réseau local que l’appareil.}}";
+    }
+    const firstField = document.getElementById("in_ownerPskOwner");
+    if (firstField) window.setTimeout(function () { firstField.focus(); }, 0);
+    return true;
+  }
+
   function renderScan(status) {
     scanState = status || { running: false };
     const scan = document.getElementById("bt_scanLocalthings");
@@ -87,6 +109,7 @@
         if (status.cancelled) {
           jeedomUtils.showAlert({ message: "{{Découverte arrêtée}}", level: "info" });
         } else if (Array.isArray(status.errors) && status.errors.length) {
+          ownerPskGuidance(status.errors);
           const message = document.createElement("div");
           message.textContent = status.errors.join(" · ");
           jeedomUtils.showAlert({ message: message.innerHTML, level: "warning" });
