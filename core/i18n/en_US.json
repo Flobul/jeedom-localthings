@@ -1,40 +1,41 @@
 {
-    "plugins\/localthings\/core\/ajax\/localthings.ajax.php": {
+    "plugins/localthings/core/ajax/localthings.ajax.php": {
         "401 - Accès non autorisé": "401 - Unauthorized access",
         "Aucune méthode correspondante : ": "No matching methods: ",
         "Équipement LocalThings introuvable": "LocalThings device not found"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsCertificateDiagnostic.php": {
+    "plugins/localthings/core/class/LocalThingsCertificateDiagnostic.php": {
         "Adresse IPv4 invalide": "Invalid IPv4 address",
         "Port LocalThings invalide": "Invalid LocalThings port",
         "Profil de certificat inconnu": "Unknown certificate profile",
         "[Certificat comparatif] Début sur %1$s:%2$d ; lecture seule": "[Comparison Report] Started on %1$s:%2$d; read-only"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsClient.php": {
+    "plugins/localthings/core/class/LocalThingsClient.php": {
         " (ports UDP 5684 et 49152-49160)": " (UDP ports 5684 and 49152–49160)",
         " ; certaines ressources restent non vérifiées": " ; some resources remain unverified",
         "Adresse IPv4 invalide": "Invalid IPv4 address",
         "Adresse IPv4 locale invalide : ": "Invalid local IPv4 address: ",
         "Adresse de réseau invalide : ": "Invalid network address: ",
-        "Appareil joignable ; refus de lecture CoAP 4.01\/4.03 ; aucun état reçu": "Device reachable; CoAP 4.01\/4.03 read request rejected; no status received",
+        "Appareil joignable ; refus de lecture CoAP 4.01/4.03 ; aucun état reçu": "Device reachable; CoAP 4.01/4.03 read request rejected; no status received",
         "Association OwnerPSK non finalisée : appareil non opérationnel": "OwnerPSK association not finalized: device not operational",
         "Aucun réseau de découverte configuré": "No discovery network configured",
         "Aucun service DTLS acceptant un ClientHello initial détecté": "No DTLS service accepting an initial ClientHello detected",
         "Aucune représentation métier accessible en lecture seule": "No read-only business representation available",
+        "Bail de découverte invalide": "Invalid trial subscription",
         "Commande acquittée mais non appliquée par l’appareil sur %s": "Command acknowledged but not executed by the device on %s",
-        "Connexion DTLS réussie mais aucun état métier lisible via \/device\/0 ou \/oic\/res": "DTLS connection successful, but no readable business status via \/device\/0 or \/oic\/res",
+        "Connexion DTLS réussie mais aucun état métier lisible via /device/0 ou /oic/res": "DTLS connection successful, but no readable business status via /device/0 or /oic/res",
         "Connexion DTLS sans certificat client réussie, mais aucun état exploitable obtenu ; ": "DTLS connection without a client certificate was successful, but no usable state was obtained; ",
         "Connexion DTLS sans certificat client échouée": "DTLS connection without a client certificate failed",
         "Consulter les lignes [OCF lecture seule].": "View the [OCF read-only] lines.",
         "Création du verrou LocalThings impossible": "Unable to create the LocalThings lock",
         "Découverte arrêtée à la demande de l’utilisateur ou tâche expirée": "Discovery stopped at the user’s request or task expired",
-        "GET \/device\/0 a répondu %s": "GET \/device\/0 returned %s",
+        "GET /device/0 a répondu %s": "GET /device/0 returned %s",
         "Impossible de prendre le verrou LocalThings (échec de flock)": "Unable to acquire the LocalThings lock (flock failure)",
         "Interpréteur PHP CLI introuvable": "PHP CLI interpreter not found",
         "La découverte est limitée à ": "Discovery is limited to ",
         "La découverte est occupée, réessayez dans quelques secondes": "The discovery process is in progress; please try again in a few seconds",
-        "La réponse \/device\/0 est invalide": "The response \/device\/0 is invalid",
-        "La réponse \/device\/0 ne contient aucune ressource": "The response for \/device\/0 contains no resources",
+        "La réponse /device/0 est invalide": "The response /device/0 is invalid",
+        "La réponse /device/0 ne contient aucune ressource": "The response for /device/0 contains no resources",
         "Le processus PHP de découverte n’a pas démarré": "The PHP discovery process has not started",
         "OwnerPSK : aucun état métier lisible, clé non enregistrée": "OwnerPSK: No readable business state, key not registered",
         "Port LocalThings invalide": "Invalid LocalThings port",
@@ -47,15 +48,15 @@
         "Tâche de découverte invalide": "Invalid discovery task",
         "Un autre échange LocalThings est déjà en cours": "Another LocalThings exchange is already underway",
         "Une découverte LocalThings est déjà en cours": "A LocalThings discovery is already underway",
-        "Utilisez un réseau IPv4 compris entre \/22 et \/30 : ": "Use an IPv4 network ranging from \/22 to \/30: ",
+        "Utilisez un réseau IPv4 compris entre /22 et /30 : ": "Use an IPv4 network ranging from /22 to /30: ",
         "Verrou de découverte inaccessible": "Unreachable discovery lock",
-        "[CBOR] \/device\/0 décodé : %d ressources": "[CBOR] \/device\/0 decoded: %d resources",
+        "[CBOR] /device/0 décodé : %d ressources": "[CBOR] /device/0 decoded: %d resources",
         "[Command] Connexion à %1$s:%2$d": "[Command] Connecting to %1$s:%2$d",
         "[Command] Réponse %1$s %2$s": "[Command] Response %1$s %2$s",
         "[Command] Réponse de vérification CBOR invalide": "[Command] Invalid CBOR verification response",
         "[Command] Smart Control=%1$s, contournement=%2$s": "[Command] Smart Control=%1$s, bypass=%2$s",
         "[Command] Stabilisation pendant %s s avant vérification": "[Command] Stabilize for %s seconds before verification",
-        "[Command] Vérification \/%1$s expected=%2$s actual=%3$s applied=%4$s": "[Command] Verification \/%1$s expected=%2$s actual=%3$s applied=%4$s",
+        "[Command] Vérification /%1$s expected=%2$s actual=%3$s applied=%4$s": "[Command] Verification /%1$s expected=%2$s actual=%3$s applied=%4$s",
         "[Command] Vérification GET refusée : %s": "[Command] GET verification failed: %s",
         "[Command] Vérification indisponible : ": "[Command] Check unavailable: ",
         "[Command] Écriture non appliquée après stabilisation; expected=%1$s actual=%2$s": "[Command] Write not applied after stabilization; expected=%1$s actual=%2$s",
@@ -66,7 +67,7 @@
         "[Discovery] Analyse de %s": "[Discovery] Analysis of %s",
         "[Discovery] Appareil trouvé sur %1$s:%2$d en %3$d ms": "[Discovery] Device found on %1$s:%2$d in %3$d ms",
         "[Discovery] Détection réseau : voisins avant=%1$d, ping=%2$d, voisins après=%3$d": "[Discovery] Network detection: neighbors before=%1$d, ping=%2$d, neighbors after=%3$d",
-        "[Discovery] Hôte %1$d\/%2$d : %3$s": "[Discovery] Host %1$d\/%2$d: %3$s",
+        "[Discovery] Hôte %1$d/%2$d : %3$s": "[Discovery] Host %1$d/%2$d: %3$s",
         "[Discovery] Identité reçue : modèle=%1$s, type=%2$s, série=%3$s, identifiant=%4$s, ressources=%5$d, commandes=%6$d": "[Discovery] Identity received: model=%1$s, type=%2$s, serial=%3$s, identifier=%4$s, resources=%5$d, commands=%6$d",
         "[Discovery] Réseaux analysés : %s": "[Discovery] Analyzed networks: %s",
         "[Discovery] Tâche PHP démarrée, mode=%s": "[Discovery] PHP task started, mode=%s",
@@ -83,7 +84,8 @@
         "Écriture CoAP refusée (%s)": "CoAP write rejected (%s)",
         "équipement non créé. ": "Equipment not created. "
     },
-    "plugins\/localthings\/core\/class\/LocalThingsDtlsProbe.php": {
+    "plugins/localthings/core/class/LocalThingsDtlsProbe.php": {
+        "Adresse d’écoute UDP invalide": "Invalid UDP listen address",
         "Aucun service DTLS acceptant un ClientHello initial détecté": "No DTLS service accepting an initial ClientHello detected",
         "ClientHello DTLS non généré": "ClientHello DTLS not generated",
         "Démarrage de la sonde DTLS impossible": "Unable to start the DTLS sensor",
@@ -92,7 +94,7 @@
         "Premier ClientHello DTLS inattendu": "First Unexpected ClientHello DTLS",
         "Préparation de la sonde DTLS impossible": "Unable to prepare the DTLS sensor"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsMapper.php": {
+    "plugins/localthings/core/class/LocalThingsMapper.php": {
         "%1$s à %2$s": "%1$s to %2$s",
         "%1$s — déclenchée le %2$s": "%1$s — triggered on %2$s",
         "Active": "Active",
@@ -140,7 +142,7 @@
         "Chauffe-eau": "Water Heater",
         "Chemises": "Folders",
         "Choisir": "Select",
-        "Commande marche\/arrêt autorisée": "On\/Off Command Enabled",
+        "Commande marche/arrêt autorisée": "On/Off Command Enabled",
         "Commandes du cycle": "Cycle commands",
         "Configuration du lave-linge": "Washing Machine Setup",
         "Congélation": "Freezing",
@@ -162,7 +164,7 @@
         "Dose de base de lessive": "Basic laundry detergent dosage",
         "Dose unique de lessive": "Single dose of laundry detergent",
         "Draps": "Sheets",
-        "Draps \/ Imperméable": "Sheets \/ Waterproof",
+        "Draps / Imperméable": "Sheets / Waterproof",
         "Durée de progression": "Progression Duration",
         "Durée de vie du filtre": "Filter lifespan",
         "Durée invalide": "Invalid duration",
@@ -215,7 +217,7 @@
         "Jeans": "Jeans",
         "Journée nuageuse": "A Cloudy Day",
         "Laine": "Wool",
-        "Laine \/ Délicat": "Wool \/ Delicate",
+        "Laine / Délicat": "Wool / Delicate",
         "Lavage + séchage": "Washing + drying",
         "Lavage IA": "AI Laundry",
         "Lavage en profondeur": "Deep Clean",
@@ -330,7 +332,7 @@
         "Verrouillé": "Locked",
         "Viande": "Meat",
         "Viandes et poissons": "Meat and Fish",
-        "Vidange \/ essorage": "Rinse \/ Spin Cycle",
+        "Vidange / essorage": "Rinse / Spin Cycle",
         "Vin": "Wine",
         "Vins et desserts": "Wines and Desserts",
         "Vitesse d’essorage": "Spin speed",
@@ -408,7 +410,7 @@
         "énergie": "energy",
         "état": "status"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsOcfDiagnostic.php": {
+    "plugins/localthings/core/class/LocalThingsOcfDiagnostic.php": {
         "Adresse OCF invalide": "Invalid OCF address",
         "Bloc OCF incomplet": "Incomplete OCF block",
         "Code CoAP sans réponse valide": "CoAP code with no valid response",
@@ -429,7 +431,7 @@
         "Taille de bloc OCF inattendue": "Unexpected OCF block size",
         "Trop de blocs OCF": "Too many OCF blocks"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsOwnerPsk.php": {
+    "plugins/localthings/core/class/LocalThingsOwnerPsk.php": {
         "Adresse IPv4 invalide": "Invalid IPv4 address",
         "Délai OwnerPSK dépassé ou transport indisponible": "OwnerPSK timeout or transport unavailable",
         "Endpoint OwnerPSK invalide": "Endpoint Owner: Invalid PSK",
@@ -451,7 +453,7 @@
         "UUID propriétaire incompatible avec le transport OpenSSL : octet nul": "Proprietary UUID incompatible with OpenSSL transport: null byte",
         "État DTLS de dérivation invalide": "Invalid DTLS derivation status"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsProtocol.php": {
+    "plugins/localthings/core/class/LocalThingsProtocol.php": {
         "Données CBOR tronquées": "Truncated CBOR data",
         "Données CBOR vides": "Empty CBOR data",
         "Délai de réponse CoAP dépassé": "CoAP response timeout",
@@ -489,11 +491,12 @@
         "[CoAP] Requête MID=%1$d, tentative=%2$d, paquet=%3$d octets": "[CoAP] Request MID=%1$d, attempt=%2$d, packet=%3$d bytes",
         "[CoAP] Réponse Block2 retardée ignorée : attendue=%1$d, reçue=%2$d": "[CoAP] Delayed Block2 response ignored: expected=%1$d, received=%2$d"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsTransport.php": {
-        " mais certificat client refusé par l’appareil (alerte DTLS unknown_ca \/ 48). ": " but the client certificate was rejected by the device (DTLS alert: unknown_ca \/ 48). ",
+    "plugins/localthings/core/class/LocalThingsTransport.php": {
+        " mais certificat client refusé par l’appareil (alerte DTLS unknown_ca / 48). ": " but the client certificate was rejected by the device (DTLS alert: unknown_ca / 48). ",
         "(sujets reçus : %s)": "(topics received: %s)",
         ", attendue=%d": ", expected=%d",
         "Adresse IPv4 DTLS invalide": "Invalid DTLS IPv4 address",
+        "Adresse d’écoute UDP invalide": "Invalid UDP listen address",
         "Appareil joignable sur ": "Device can be reached at ",
         "Attente DTLS interrompue": "DTLS wait interrupted",
         "Aucun certificat PEM trouvé": "No PEM certificates found",
@@ -554,7 +557,7 @@
         "Écriture DTLS impossible : ": "Unable to write DTLS: ",
         "Écriture du fichier incomplète": "File write incomplete"
     },
-    "plugins\/localthings\/core\/class\/LocalThingsWidget.php": {
+    "plugins/localthings/core/class/LocalThingsWidget.php": {
         "Add Wash": "Add Wash",
         "Adoucissant": "Fabric softener",
         "Adoucissant restant": "Remaining fabric softener",
@@ -630,7 +633,7 @@
         "État": "Status",
         "État du filtre": "Filter Status"
     },
-    "plugins\/localthings\/core\/class\/localthings.class.php": {
+    "plugins/localthings/core/class/localthings.class.php": {
         "Action": "Action",
         "Activer": "Enable",
         "Activez les extensions et fonctions PHP indiquées": "Enable the specified PHP extensions and functions",
@@ -639,47 +642,59 @@
         "Adresse LocalThings absente": "LocalThings address missing",
         "Affichage indisponible. Consultez le journal localthings.": "Display unavailable. Check the Localthings log.",
         "Appareils connectés": "Smart devices",
+        "Bail de découverte invalide": "Invalid trial subscription",
         "Certificats DTLS": "DTLS Certificates",
         "Cet appareil est connecté en lecture seule ; pilotage non validé": "This device is connected in read-only mode; control not enabled",
         "Commande": "Command",
+        "Commande LocalThings introuvable": "LocalThings command not found",
+        "Commandes configurées": "Configured commands",
         "Communication avec l’appareil réussie": "Communication with the device was successful",
         "Configurez d’abord les certificats LocalThings": "First, configure the LocalThings certificates",
         "Configurez les certificats dans la page du plugin": "Configure the certificates on the plugin page",
         "Connecté": "Connected",
         "Connexion standard": "Standard connection",
         "Création du répertoire de données impossible": "Unable to create the data directory",
+        "Création du répertoire du démon impossible": "Unable to create the daemon directory",
+        "Découverte LocalThings en cours": "Exploring LocalThings",
         "Démarrez le démon du plugin": "Start the plugin daemon",
         "Démon arrêté": "Daemon stopped",
         "Désactiver": "Disable",
         "Désactivé": "Disabled",
         "En ligne": "Online",
+        "Exécutable PHP CLI introuvable": "PHP CLI executable not found",
         "Fonctions PHP requises": "Required PHP functions",
         "Hors ligne": "Offline",
         "Identifiant d’appareil invalide": "Invalid device ID",
         "Installez PHP CLI": "Install PHP CLI",
         "Interpréteur PHP CLI": "PHP CLI interpreter",
+        "Le démon LocalThings ne répond pas après son lancement": "The LocalThings daemon does not respond after it is launched",
         "Lecture seule — pilotage non validé": "Read-only — control not validated",
         "L’appareil est hors ligne. Rafraîchissez son état avant d’envoyer une commande.": "The device is offline. Refresh its status before sending a command.",
         "Nouvel appareil local découvert : ": "New local device detected: ",
         "OpenSSL avec prise en charge DTLS est introuvable": "OpenSSL with DTLS support cannot be found",
+        "Opération du démon inconnue": "Unknown daemon operation",
         "Rafraîchir": "Refresh",
         "Rafraîchissement automatique": "Automatic refresh",
         "Recette de commande LocalThings absente": "LocalThings command recipe missing",
         "Relancez les dépendances": "Revitalize the outbuildings",
         "Réponse LocalThings invalide": "Invalid LocalThings response",
+        "Script du démon PHP introuvable": "PHP daemon script not found",
         "Testez la communication depuis la page de l’équipement": "Test communication from the device page",
         "Transport OpenSSL DTLS": "OpenSSL DTLS Transport",
-        "Tâche de rafraîchissement introuvable": "Refresh task not found",
-        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Refresh task not found; please reinstall the plugin",
         "[Discovery] Ajout manuel demandé pour %s": "[Discovery] Manual addition requested for %s",
         "[Discovery] Découverte réseau demandée : %s": "[Discovery] Network discovery requested: %s",
         "[Discovery] Tâche PHP lancée, PID=%d": "[Discovery] PHP task launched, PID=%d",
         "[Discovery] Tâche PHP manuelle lancée, PID=%d": "[Discovery] Manual PHP task launched, PID=%d",
         "[Test] Communication réussie avec %1$s en %2$d ms": "[Test] Communication successful with %1$s in %2$d ms",
         "[Test] Échec de communication avec %1$s : %2$s": "[Test] Communication failure with %1$s: %2$s",
-        "Équipement LocalThings introuvable": "LocalThings device not found"
+        "Échec du lancement du démon LocalThings": "Failed to start the LocalThings daemon",
+        "Équipement LocalThings introuvable": "LocalThings device not found",
+        "Équipements actifs": "Active equipment",
+        "Équipements configurés": "Configured devices",
+        "Tâche de rafraîchissement introuvable": "Refresh task not found",
+        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Refresh task not found; please reinstall the plugin"
     },
-    "plugins\/localthings\/core\/template\/dashboard\/localthings.device.template.html": {
+    "plugins/localthings/core/template/dashboard/localthings.device.template.html": {
         "Actions": "Actions",
         "Appareil hors ligne — commandes indisponibles": "Device is offline — commands unavailable",
         "Consommation": "Energy consumption",
@@ -692,7 +707,7 @@
         "Santé : En ligne": "Health: Online",
         "Santé : Hors ligne": "Health: Offline"
     },
-    "plugins\/localthings\/core\/template\/mobile\/localthings.device.template.html": {
+    "plugins/localthings/core/template/mobile/localthings.device.template.html": {
         "Actions": "Actions",
         "Appareil hors ligne — commandes indisponibles": "Device is offline — commands unavailable",
         "Consommation": "Energy consumption",
@@ -705,7 +720,16 @@
         "Santé : En ligne": "Health: Online",
         "Santé : Hors ligne": "Health: Offline"
     },
-    "plugins\/localthings\/desktop\/js\/configuration.js": {
+    "plugins/localthings/desktop/js/community.js": {
+        "Aucun diagnostic disponible.": "No diagnostics available.",
+        "Identifiant du plugin indisponible.": "Plugin ID not available.",
+        "Impossible de préparer le sujet Community. Réessayez ultérieurement.": "Unable to prepare the Community topic. Please try again later.",
+        "Impossible d’afficher l’aperçu du diagnostic Community.": "Unable to display the Community diagnostic preview.",
+        "Inclure le diagnostic facultatif du plugin": "Include the plugin's optional diagnostics",
+        "La réponse Community reçue est invalide.": "The Community response received is invalid.",
+        "Le sujet Community peut être public. Vérifiez les informations ci-dessous avant de continuer.": "The \"Community\" topic may be public. Please review the information below before continuing."
+    },
+    "plugins/localthings/desktop/js/configuration.js": {
         "Certificats LocalThings installés": "Installed LocalThings certificates",
         "Configurés": "Configured",
         "Disponible": "Available",
@@ -716,13 +740,14 @@
         "Modification en cours...": "Editing in progress...",
         "Non configurés": "Not configured"
     },
-    "plugins\/localthings\/desktop\/js\/health.js": {
+    "plugins/localthings/desktop/js/health.js": {
         "Santé LocalThings": "LocalThings Health"
     },
-    "plugins\/localthings\/desktop\/js\/localthings.js": {
+    "plugins/localthings/desktop/js/localthings.js": {
         "Adresse": "Address",
         "Afficher": "Show",
         "Arrêt en cours…": "Shutting down...",
+        "Arrêter la découverte": "Stop discovery",
         "Aucune": "None",
         "Choisir une icône": "Choose an icon",
         "Clé locale enregistrée": "Local key saved",
@@ -730,7 +755,6 @@
         "Configuration avancée": "Advanced configuration",
         "Diagnostic impossible": "Unable to diagnose",
         "Découverte arrêtée": "Discovery suspended",
-        "Découverte en cours": "Currently exploring",
         "Découvrir": "Explore",
         "Déjà associé": "Already linked",
         "Déplacer la commande": "Move the command",
@@ -750,7 +774,6 @@
         "Suite": "Next",
         "Supprimer": "Delete",
         "Tester": "Test",
-        "Une découverte est déjà en cours. Voulez-vous l’arrêter ?": "A discovery is already underway. Do you want to stop it?",
         "Unité": "Unit",
         "Valeur|Libellé;...": "Value|Label;...",
         "Vérification en cours pour": "Verification in progress for",
@@ -763,9 +786,11 @@
         "inconnue": "unknown",
         "non": "No",
         "oui": "Yes",
-        "État de l’appareil actualisé": "Updated device status"
+        "État de l’appareil actualisé": "Updated device status",
+        "Découverte en cours": "Currently exploring",
+        "Une découverte est déjà en cours. Voulez-vous l’arrêter ?": "A discovery is already underway. Do you want to stop it?"
     },
-    "plugins\/localthings\/desktop\/modal\/health.php": {
+    "plugins/localthings/desktop/modal/health.php": {
         "401 - Accès non autorisé": "401 - Unauthorized access",
         "Actifs": "Assets",
         "Actions": "Actions",
@@ -798,7 +823,7 @@
         "État du plugin": "Plugin Status",
         "État du transport local, des certificats et des équipements Samsung.": "Status of local shipping, certificates, and Samsung equipment."
     },
-    "plugins\/localthings\/desktop\/php\/localthings.php": {
+    "plugins/localthings/desktop/php/localthings.php": {
         "401 - Accès non autorisé": "401 - Unauthorized access",
         "Accès à l’appareil": "Access to the device",
         "Actions": "Actions",
@@ -814,18 +839,24 @@
         "Cette clé doit déjà être installée dans l’appareil par une association autorisée. Le plugin ne peut pas la récupérer depuis les informations publiques. Elle sera enregistrée seulement après vérification de l’appareil, du propriétaire et des lectures métier.": "This key must already be installed in the device by an authorized provider. The plugin cannot retrieve it from publicly available information. It will be registered only after the device, the owner, and the utility meter readings have been verified.",
         "Commandes": "Commands",
         "Communication": "Communication",
+        "Community": "Community",
         "Comparer les certificats": "Compare Certificates",
         "Comparer les profils de certificat acceptés par cet appareil": "Compare the certificate profiles accepted by this device",
         "Configuration": "Configuration",
         "Configuration avancée": "Advanced configuration",
+        "Connecté": "Connected",
         "Contourne le verrou de sécurité local pour les appareils qui acceptent certaines commandes même lorsque Smart Control est désactivé. À utiliser uniquement si nécessaire.": "Bypasses the local security lock for devices that accept certain commands even when Smart Control is disabled. Use only when necessary.",
         "Contrôle sans Smart Control": "Control without Smart Control",
+        "Créer un sujet d'assistance sur Community Jeedom": "Create a support ticket on the Jeedom Community",
         "Dernière communication": "Last communication",
         "Dernière erreur": "Last error",
         "Diagnostiquer cette adresse": "Check this address",
+        "Déconnecté": "Offline",
         "Découvrir": "Explore",
         "Fabricant": "Manufacturer",
         "Gestion": "Management",
+        "IP": "IPs",
+        "IP inconnue": "Unknown IP",
         "Identifiant": "ID",
         "Informations locales": "Local Information",
         "Journal dédié : localthings_ownerpsk. Les autres équipements peuvent rester activés.": "Dedicated log: localthings_ownerpsk. Other devices can remain enabled.",
@@ -857,10 +888,11 @@
         "Widget": "Widgets",
         "Widget LocalThings": "LocalThings Widget",
         "Widget du core Jeedom": "Jeedom Core Widget",
+        "inconnu": "unknown",
         "Équipement": "Equipment",
         "État": "Status"
     },
-    "plugins\/localthings\/plugin_info\/configuration.php": {
+    "plugins/localthings/plugin_info/configuration.php": {
         "1 heure": "1 hour",
         "1 jour": "1 day",
         "10 secondes": "10 seconds",
@@ -891,11 +923,11 @@
         "Installer les certificats": "Install the certificates",
         "Intervalle lorsque l’appareil est en ligne": "Interval when the device is online",
         "Intervalle lorsque l’appareil est hors ligne": "Interval when the device is offline",
-        "Laissez vide pour utiliser automatiquement le sous-réseau \/24 de l’adresse interne Jeedom.": "Leave blank to automatically use the \/24 subnet of the Jeedom internal address.",
+        "Laissez vide pour utiliser automatiquement le sous-réseau /24 de l’adresse interne Jeedom.": "Leave blank to automatically use the /24 subnet of the Jeedom internal address.",
         "Les requêtes CoAP et CBOR sont gérées en PHP. OpenSSL fournit uniquement le canal chiffré DTLS.": "CoAP and CBOR requests are handled in PHP. OpenSSL provides only the DTLS encrypted channel.",
         "LocalThings communique directement avec les appareils Samsung compatibles sur le réseau local. Aucun compte SmartThings ni jeton cloud n’est requis.": "LocalThings communicates directly with compatible Samsung devices on the local network. No SmartThings account or cloud token is required.",
         "Notation CIDR, une plage par ligne ou séparées par une virgule ou un point-virgule.": "CIDR notation: one range per line, or separated by a comma or semicolon.",
-        "Notation CIDR, une plage par ligne ou séparées par une virgule ou un point-virgule. Si le champ est vide, le sous-réseau \/24 de l’adresse interne Jeedom est utilisé. La découverte est limitée à 1 024 adresses.": "CIDR notation: one range per line, or separated by a comma or semicolon. If the field is empty, the \/24 subnet of the Jeedom internal address is used. Discovery is limited to 1,024 addresses.",
+        "Notation CIDR, une plage par ligne ou séparées par une virgule ou un point-virgule. Si le champ est vide, le sous-réseau /24 de l’adresse interne Jeedom est utilisé. La découverte est limitée à 1 024 adresses.": "CIDR notation: one range per line, or separated by a comma or semicolon. If the field is empty, the /24 subnet of the Jeedom internal address is used. Discovery is limited to 1,024 addresses.",
         "Plages réseau à analyser": "Network ranges to analyze",
         "Saisir un certificat et une clé": "Enter a certificate and a key",
         "Tester": "Test",
