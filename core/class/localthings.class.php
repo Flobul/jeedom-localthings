@@ -24,7 +24,7 @@ require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.7.5';
+    public static $_pluginVersion = '0.8.0';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -34,26 +34,79 @@ class localthings extends eqLogic
      */
     public static function getConfigForCommunity($_separator = '<br>')
     {
-        $equipments = eqLogic::byType(__CLASS__);
-        $enabled = 0;
-        $commands = 0;
-
-        foreach ($equipments as $equipment) {
-            if ((int) $equipment->getIsEnable() === 1) {
-                $enabled++;
-            }
-            $equipmentCommands = $equipment->getCmd();
-            $commands += is_array($equipmentCommands) ? count($equipmentCommands) : 0;
+        if (!is_string($_separator) || !in_array($_separator, array('<br>', '<br/>', '<br />', "\n"), true)) {
+            $_separator = '<br>';
         }
-
-        $lines = array(
-            '<!-- JEEDOM_PLUGIN_DIAGNOSTICS_START -->',
-            __('Équipements configurés', __FILE__) . ' : ' . count($equipments),
-            __('Équipements actifs', __FILE__) . ' : ' . $enabled,
-            __('Commandes configurées', __FILE__) . ' : ' . $commands,
-            '<!-- JEEDOM_PLUGIN_DIAGNOSTICS_END -->'
-        );
-
+        $unknown = __('Inconnu', __FILE__);
+        $isTrue = static function ($value) { return in_array($value, array(true, 1, '1'), true); };
+        $isFalse = static function ($value) { return in_array($value, array(false, 0, '0'), true); };
+        $integer = static function ($value, $min, $max) {
+            if ((!is_int($value) && !is_string($value)) || preg_match('/^[0-9]{1,10}$/D', (string) $value) !== 1) {
+                return null;
+            }
+            $number = (int) $value;
+            return $number >= $min && $number <= $max ? $number : null;
+        };
+        $present = static function ($value) { return is_string($value) && trim($value) !== ''; };
+        $format = static function ($value, $kind, $args = array()) use ($unknown) {
+            switch ($kind) {
+                case 'enum':
+                    if (!is_string($value) && !is_int($value)) { return $unknown; }
+                    $value = (string) $value;
+                    return in_array($value, $args, true) ? $value : $unknown;
+            }
+            return $unknown;
+        };
+        $equipments = eqLogic::byType(__CLASS__);
+        $equipments = is_array($equipments) ? $equipments : array();
+        $lines = array('<!-- JEEDOM_PLUGIN_DIAGNOSTICS_START -->', __('Équipements configurés', __FILE__) . ' : ' . count($equipments));
+        $total = 0;
+        $invalid = 0;
+        foreach ($equipments as $equipment) {
+            $items = array($equipment);
+            foreach ($items as $item) {
+                $value = $item->getConfiguration('auth_mode', '');
+                $matched = is_string($value) && in_array($value, array('server_certificate_readonly'), true);
+                if ($matched) { $total++; }
+            }
+        }
+        $lines[] = __('Lecture seule', __FILE__) . ' : ' . ($invalid > 0 ? $unknown : (string) $total);
+        $total = 0;
+        $invalid = 0;
+        foreach ($equipments as $equipment) {
+            $items = array($equipment);
+            foreach ($items as $item) {
+                $value = $item->getConfiguration('auth_mode', '');
+                $matched = is_string($value) && in_array($value, array('certificate', 'owner_psk'), true);
+                if ($matched) { $total++; }
+            }
+        }
+        $lines[] = __('Connexion standard', __FILE__) . ' : ' . ($invalid > 0 ? $unknown : (string) $total);
+        $total = 0;
+        $invalid = 0;
+        foreach ($equipments as $equipment) {
+            $items = array($equipment);
+            foreach ($items as $item) {
+                $value = $item->getConfiguration('auth_mode', '');
+                $matched = is_string($value) && in_array($value, array('server_certificate_readonly', 'certificate', 'owner_psk'), true);
+                if (!$matched) { $total++; }
+            }
+        }
+        $lines[] = __('Authentification inconnue', __FILE__) . ' : ' . ($invalid > 0 ? $unknown : (string) $total);
+        $lines[] = __('Polling en ligne', __FILE__) . ' : ' . $format(config::byKey('poll_interval_online', __CLASS__, ''), 'enum', array('10s', '20s', '30s', '1', '2', '3', '4', '5', '10', '15', '30', '60'));
+        $lines[] = __('Polling hors ligne (min)', __FILE__) . ' : ' . $format(config::byKey('poll_interval_offline', __CLASS__, ''), 'enum', array('1', '2', '3', '4', '5', '10', '15', '30', '60'));
+        $total = 0;
+        $invalid = 0;
+        foreach ($equipments as $equipment) {
+            $items = array($equipment);
+            foreach ($items as $item) {
+                $value = $item->getConfiguration('offline_retry_failures', '');
+                $number = $integer($value, 0, 1000000);
+                if ($number === null) { $invalid++; } else { $total += ($number > 0 ? 1 : 0); }
+            }
+        }
+        $lines[] = __('Équipements avec échecs mémorisés', __FILE__) . ' : ' . ($invalid > 0 ? $unknown : (string) $total);
+        $lines[] = '<!-- JEEDOM_PLUGIN_DIAGNOSTICS_END -->';
         return implode($_separator, $lines) . $_separator;
     }
 

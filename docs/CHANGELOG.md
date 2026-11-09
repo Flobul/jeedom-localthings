@@ -1,6 +1,9 @@
 # Changelog
 
-## Non publié
+## Version 0.8.0 (08/11/2026)
+- Le brouillon Community inclut un diagnostic technique propre au plugin, agrégé et sans identifiants ni secrets, sans connexion aux appareils.
+
+- Le bouton Community est harmonisé et placé dans un bloc distinct à droite des actions de gestion, sur la même ligne lorsque la largeur le permet.
 
 ## Version 0.7.5 (07/11/2026)
 
