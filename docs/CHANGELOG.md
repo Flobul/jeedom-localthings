@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.8.1 (12/11/2026)
+- Après un timeout CoAP sur une session DTLS maintenue, le plugin abandonne le repli OCF sur cette session et passe directement à sa tentative unique de reconnexion.
+- Les journaux distinguent désormais ce repli pendant un rafraîchissement de celui effectué pendant une découverte.
+
 ## Version 0.8.0 (08/11/2026)
 - Le brouillon Community inclut un diagnostic technique propre au plugin, agrégé et sans identifiants ni secrets, sans connexion aux appareils.
 

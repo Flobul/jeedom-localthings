@@ -24,7 +24,7 @@ require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.8.0';
+    public static $_pluginVersion = '0.8.1';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;

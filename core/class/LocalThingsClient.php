@@ -1022,10 +1022,21 @@ class LocalThingsDeviceClient
                 } catch (LocalThingsDiscoveryCancelled $error) {
                     throw $error;
                 } catch (Throwable $error) {
+                    $failureKind = self::connectionFailureKind($error);
+                    if ($sessionSource === 'cached' && $failureKind === 'coap_timeout') {
+                        $this->log('info', '[Session] host=' . $host . ' port=' . (int) $port
+                            . ' absence de réponse CoAP sur la session maintenue ; repli OCF ignoré');
+                        throw $error;
+                    }
                     $this->log('info', '[DTLS diagnostic] phase=device_read session_source=' . $sessionSource
-                        . ' failure=' . self::connectionFailureKind($error)
+                        . ' failure=' . $failureKind
                         . ' next=individual_resources_same_session');
-                    $this->log('info', '[Discovery] Lecture /device/0 échouée ; lecture authentifiée des ressources individuelles sur la même session');
+                    $fallbackPhase = '[Refresh]';
+                    if ($includeIdentity) {
+                        $fallbackPhase = '[Discovery]';
+                    }
+                    $this->log('info', $fallbackPhase
+                        . ' Lecture /device/0 échouée ; lecture authentifiée des ressources individuelles sur la même session');
                     $individualFallback = true;
                     $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0, true);
                 }
