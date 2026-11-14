@@ -24,7 +24,7 @@ require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.8.1';
+    public static $_pluginVersion = '0.8.2';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -750,33 +750,46 @@ class localthings extends eqLogic
     }
 
     /**
-     * Conserve l’ordre choisi par l’utilisateur pour une liste Jeedom.
+     * Conserve l’ordre, les libellés et les valeurs ajoutées par l’utilisateur.
      *
-     * Les libellés et les valeurs disponibles restent pilotés par l’appareil :
-     * les options disparues sont retirées et les nouvelles sont ajoutées à la fin.
+     * Une option auparavant générée mais que l’appareil ne publie plus est
+     * retirée. Une valeur absente de la précédente liste générée est considérée
+     * comme personnalisée et ne doit jamais disparaître au prochain polling.
      *
      * @param string $stored Liste actuellement enregistrée.
      * @param string $generated Liste fraîchement annoncée par l’appareil.
+     * @param string $previousGenerated Dernière liste générée connue.
      * @return string
      */
-    private static function mergeListValueOrder($stored, $generated)
+    private static function mergeListValueOrder($stored, $generated, $previousGenerated = '')
     {
-        $generatedEntries = array();
-        foreach (array_filter(explode(';', (string) $generated), 'strlen') as $entry) {
-            $parts = explode('|', $entry, 2);
-            $generatedEntries[(string) $parts[0]] = $entry;
-        }
+        $parse = static function ($list) {
+            $entries = array();
+            foreach (array_filter(explode(';', (string) $list), 'strlen') as $entry) {
+                $parts = explode('|', $entry, 2);
+                $value = (string) $parts[0];
+                if ($value !== '') {
+                    $entries[$value] = $entry;
+                }
+            }
+            return $entries;
+        };
+        $generatedEntries = $parse($generated);
         if (count($generatedEntries) === 0) {
-            return '';
+            return (string) $stored;
         }
+        $previousEntries = $parse($previousGenerated);
 
         $ordered = array();
-        foreach (array_filter(explode(';', (string) $stored), 'strlen') as $entry) {
-            $parts = explode('|', $entry, 2);
-            $value = (string) $parts[0];
+        foreach ($parse($stored) as $value => $entry) {
             if (isset($generatedEntries[$value])) {
-                $ordered[] = $generatedEntries[$value];
+                // Le libellé saisi par l’utilisateur prévaut sur la traduction générée.
+                $ordered[] = $entry;
                 unset($generatedEntries[$value]);
+                continue;
+            }
+            if (count($previousEntries) === 0 || !isset($previousEntries[$value])) {
+                $ordered[] = $entry;
             }
         }
         foreach ($generatedEntries as $entry) {
@@ -902,12 +915,19 @@ class localthings extends eqLogic
                     }
                     $generatedListValue = implode(';', $values);
                     $storedListValue = (string) $command->getConfiguration('listValue', '');
+                    $previousGeneratedListValue = (string) $command->getConfiguration('generatedListValue', '');
                     $command->setConfiguration(
                         'listValue',
-                        self::mergeListValueOrder($storedListValue, $generatedListValue)
+                        self::mergeListValueOrder(
+                            $storedListValue,
+                            $generatedListValue,
+                            $previousGeneratedListValue
+                        )
                     );
+                    $command->setConfiguration('generatedListValue', $generatedListValue);
                 } else {
                     $command->setConfiguration('listValue', '');
+                    $command->setConfiguration('generatedListValue', '');
                 }
                 if ($actionSubtype === 'slider') {
                     $command->setConfiguration('minValue', isset($action['min']) && is_numeric($action['min']) ? $action['min'] : '');

@@ -232,6 +232,7 @@ class LocalThingsMapper
             }
         }
         $this->appendOptionEntities($resources, $entities, $states);
+        $this->appendAirConditionerOptionEntities($resources, $entities, $states);
         $this->appendCycleEntity($resources, $entities, $states);
         $this->appendOperationalEntities($resources, $entities, $states);
         $this->appendAirQualityEntities($resources, $entities, $states);
@@ -511,6 +512,18 @@ class LocalThingsMapper
                 );
                 break;
             case 'option_token':
+                if (isset($recipe['allowed'])
+                    && (!is_array($recipe['allowed']) || !in_array((string) $value, $recipe['allowed'], true))) {
+                    throw new InvalidArgumentException(__('Option Samsung invalide', __FILE__));
+                }
+                if (isset($recipe['min'], $recipe['max'])) {
+                    if (!is_numeric($value)
+                        || (float) $value < (float) $recipe['min']
+                        || (float) $value > (float) $recipe['max']) {
+                        throw new InvalidArgumentException(__('Valeur Samsung hors limites', __FILE__));
+                    }
+                    $value = (string) (int) round((float) $value);
+                }
                 $bodyValue = array(
                     (string) ($recipe['prefix'] ?? '') . '_' . (string) $value
                 );
@@ -613,6 +626,8 @@ class LocalThingsMapper
             'x.com.samsung.da.filterRemind',
             'x.com.samsung.da.remindBeep',
             'x.com.samsung.da.nightLight',
+            'x.com.samsung.da.windfree',
+            'x.com.samsung.da.windsleep',
             'x.com.samsung.da.away',
             'muteonce',
         );
@@ -804,6 +819,10 @@ class LocalThingsMapper
                     if ($prefix === '' || $value === '') {
                         continue;
                     }
+                    if ($href === '/mode/vs/0'
+                        && in_array($prefix, array('Sleep', 'Volume', 'FilterAlarmTime', 'FilterCleanAlarm'), true)) {
+                        continue;
+                    }
                     if ($prefix === 'Course') {
                         continue;
                     }
@@ -855,6 +874,129 @@ class LocalThingsMapper
                             : $value);
                 }
             }
+        }
+    }
+
+    /**
+     * Expose les réglages de climatiseur encodés dans les jetons options[].
+     *
+     * @param array<string,array<string,mixed>> $resources Ressources courantes.
+     * @param array<int,array<string,mixed>> $entities Entités complétées.
+     * @param array<string,mixed> $states États complétés.
+     * @return void
+     */
+    private function appendAirConditionerOptionEntities($resources, &$entities, &$states)
+    {
+        $href = '/mode/vs/0';
+        $field = 'x.com.samsung.da.options';
+        $tokens = $resources[$href][$field] ?? null;
+        if (!is_array($tokens)) {
+            return;
+        }
+
+        $sleep = $this->optionValue($tokens, 'Sleep');
+        if ($sleep !== null && is_numeric($sleep)) {
+            $key = $this->entityKey($href, 'option:Sleep');
+            $recipe = array(
+                'href' => $href,
+                'field' => $field,
+                'encoding' => 'option_token',
+                'prefix' => 'Sleep',
+                'min' => 0,
+                'max' => 16,
+            );
+            $action = $this->valueAction('set', __('Régler', __FILE__), 'slider', $recipe);
+            $action['min'] = 0;
+            $action['max'] = 16;
+            $action['step'] = 1;
+            $entities[] = array(
+                'key' => $key,
+                'name' => __('Mode nuit tropicale', __FILE__),
+                'platform' => 'number',
+                'type' => 'info',
+                'subtype' => 'numeric',
+                'unit' => '',
+                'category' => '',
+                'value' => (int) $sleep,
+                'options' => array(),
+                'actions' => array($action),
+            );
+            $states[$key] = (int) $sleep;
+        }
+
+        $threshold = $this->optionValue($tokens, 'FilterAlarmTime');
+        if ($threshold !== null) {
+            $allowed = array('180', '300', '500', '700');
+            $key = $this->entityKey($href, 'option:FilterAlarmTime');
+            $recipe = array(
+                'href' => $href,
+                'field' => $field,
+                'encoding' => 'option_token',
+                'prefix' => 'FilterAlarmTime',
+                'allowed' => $allowed,
+            );
+            $options = array();
+            foreach ($allowed as $hours) {
+                $options[] = array('value' => $hours, 'label' => $hours . ' h');
+            }
+            $entities[] = array(
+                'key' => $key,
+                'name' => __('Seuil d’alerte du filtre', __FILE__),
+                'platform' => 'select',
+                'type' => 'info',
+                'subtype' => 'string',
+                'unit' => 'h',
+                'category' => 'maintenance',
+                'value' => (string) $threshold,
+                'options' => array(),
+                'actions' => array($this->valueAction('set', __('Choisir', __FILE__), 'select', $recipe, $options)),
+            );
+            $states[$key] = (string) $threshold;
+        }
+
+        if ($this->optionValue($tokens, 'FilterTime') !== null) {
+            $key = 'ac_filter_reset_' . substr(sha1($href), 0, 8);
+            $recipe = array(
+                'href' => $href,
+                'field' => $field,
+                'encoding' => 'fixed',
+                'fixed' => array('FilterCleanAlarm_Clear'),
+            );
+            $entities[] = array(
+                'key' => $key,
+                'name' => __('Réinitialiser le filtre', __FILE__),
+                'platform' => 'button',
+                'type' => 'info',
+                'subtype' => 'string',
+                'unit' => '',
+                'category' => 'maintenance',
+                'value' => '',
+                'options' => array(),
+                'actions' => array($this->fixedAction('reset', __('Réinitialiser', __FILE__), $recipe)),
+            );
+            $states[$key] = '';
+        }
+
+        $volume = $this->optionValue($tokens, 'Volume');
+        if ($volume !== null) {
+            $key = $this->entityKey($href, 'option:Volume');
+            $baseRecipe = array('href' => $href, 'field' => $field, 'encoding' => 'fixed');
+            $entities[] = array(
+                'key' => $key,
+                'name' => __('Volume', __FILE__),
+                'platform' => 'switch',
+                'type' => 'info',
+                'subtype' => 'binary',
+                'unit' => '',
+                'category' => '',
+                'value' => $volume === 'Mute' ? 0 : 1,
+                'options' => array(),
+                'actions' => array(
+                    $this->fixedAction('up', __('Volume +', __FILE__), array_merge($baseRecipe, array('fixed' => array('Volume_100')))),
+                    $this->fixedAction('down', __('Volume −', __FILE__), array_merge($baseRecipe, array('fixed' => array('Volume_Mute')))),
+                ),
+            );
+            $states[$key] = $volume === 'Mute' ? 0 : 1;
         }
     }
 
@@ -1260,6 +1402,14 @@ class LocalThingsMapper
             'heat' => __('Chauffage', __FILE__),
             'fan' => __('Ventilation', __FILE__),
             'dry' => __('Déshumidification', __FILE__),
+            'quiet' => __('Silencieux', __FILE__),
+            'nano' => __('WindFree', __FILE__),
+            'nanosleep' => __('WindFree Sleep', __FILE__),
+            'sleep' => __('Sommeil', __FILE__),
+            'smart' => __('Intelligent', __FILE__),
+            'speed' => __('Rapide', __FILE__),
+            'motionindirect' => __('Flux indirect', __FILE__),
+            'motiondirect' => __('Flux direct', __FILE__),
             'nospin' => __('Sans essorage', __FILE__),
             'rinsehold' => __('Arrêt cuve pleine', __FILE__),
             'extralow' => __('Très faible', __FILE__),
@@ -1772,6 +1922,9 @@ class LocalThingsMapper
             '/dnd/vs/0|x.com.samsung.da.startTime' => __('Début du mode Ne pas déranger', __FILE__),
             '/dnd/vs/0|x.com.samsung.da.endTime' => __('Fin du mode Ne pas déranger', __FILE__),
             '/mode/vs/0|x.com.samsung.da.modes' => __('Mode', __FILE__),
+            '/mode/convenient/vs/0|x.com.samsung.da.modes' => __('Mode de confort', __FILE__),
+            '/modeoption/windfree/vs/0|x.com.samsung.da.windfree' => __('WindFree', __FILE__),
+            '/modeoption/windsleep/vs/0|x.com.samsung.da.windsleep' => __('WindFree Sleep', __FILE__),
             '/mode/dhw/vs/0|x.com.samsung.da.modes' => __('Mode eau chaude', __FILE__),
             '/water/consumption/vs/0|x.com.samsung.da.cumulativeWater' => __('Quantité d’eau consommée', __FILE__),
             '/specialzone/one/vs/0|roomDesiredMode' => __('Programme de la zone boissons', __FILE__),

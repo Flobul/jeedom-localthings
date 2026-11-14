@@ -1,5 +1,11 @@
 # Changelog
 
+## Non publié
+
+## Version 0.8.2 (14/11/2026)
+
+- Les modes avancés des climatiseurs Samsung sont maintenant exposés avec des libellés clairs : Quiet, WindFree, WindFree Sleep, mode nuit tropicale, réinitialisation et seuil d’alerte du filtre, ainsi que les commandes de volume. Les valeurs et traductions ajoutées manuellement dans une commande select sont désormais conservées lors des pollings et resynchronisations.
+
 ## Version 0.8.1 (12/11/2026)
 - Après un timeout CoAP sur une session DTLS maintenue, le plugin abandonne le repli OCF sur cette session et passe directement à sa tentative unique de reconnexion.
 - Les journaux distinguent désormais ce repli pendant un rafraîchissement de celui effectué pendant une découverte.

@@ -48,6 +48,7 @@ run_discovery_test() {
 }
 
 run_test "LocalThings mapper and equipment profile" php .github/ci/functional/ehs_identity_test.php
+run_test "Air-conditioner custom and advanced commands survive synchronization" php .github/ci/functional/airconditioner_commands_test.php
 run_test "CoAP response correlation, retries and block transfer" php .github/ci/functional/coap_response_correlation_test.php
 run_test "UDP relay and DTLS peer pinning" php .github/ci/functional/udp_relay_test.php
 run_test "Discovery lifecycle and error recovery" run_discovery_test
