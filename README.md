@@ -191,17 +191,25 @@ une fenêtre de transfert autorisée. La création de sa clé reste non résolue
 
 ### OwnerPSK expérimental (0.4.23)
 
-Le bouton **OwnerPSK** de la barre de découverte ouvre deux fonctions :
+Le bouton **OwnerPSK** de la barre de découverte ouvre trois fonctions :
 
 1. **Diagnostiquer cette adresse** : détecte le port, lit l’état OCF sans
    certificat client avec vérification du serveur et sonde le premier échange
    ECDHE-PSK. Aucun cookie ni identité PSK n’est envoyé par cette sonde. Une
    réponse ne prouve ni l’autorisation ni la compatibilité d’une association.
-2. **Utiliser une clé déjà provisionnée** : renseigner les UUID OCF du propriétaire
-   et de l’appareil, puis la clé de 16 octets (32 caractères hexadécimaux). Le plugin
-   vérifie une nouvelle session PSK, l’identité de l’appareil, le propriétaire et
-   une lecture métier avant de remplacer le fichier local. Un échec conserve la
-   clé précédente. Utiliser ensuite **Ajouter par IP** pour créer l’équipement.
+2. **Importer depuis une sauvegarde iPhone** : charge le fichier SmartThings
+   `Library/Security/oic_svr_db_client.dat`, décode son CBOR imbriqué et liste
+   les enregistrements OwnerPSK (`credtype=1`). L’utilisateur sélectionne les
+   appareils, renseigne leur adresse IPv4, puis le plugin vérifie les identités
+   et les lectures métier avant de lancer leur découverte ciblée. Le fichier
+   n’est pas conservé et les clés ne sont pas journalisées. Voir le
+   [guide iPhone OwnerPSK](docs/OWNERPSK_IPHONE.md).
+3. **Utiliser une clé déjà provisionnée** : renseigner les UUID OCF du propriétaire
+   et de l’appareil, puis la clé de 16 ou 32 octets (32 ou 64 caractères
+   hexadécimaux). Le plugin vérifie une nouvelle session PSK, l’identité de
+   l’appareil, le propriétaire et une lecture métier avant de remplacer le
+   fichier local. Un échec conserve la clé précédente. Utiliser ensuite
+   **Ajouter par IP** pour créer l’équipement.
 
 Le transport utilise `ECDHE-PSK-AES128-CBC-SHA256` et l’UUID propriétaire sous
 forme de 16 octets. OpenSSL ne peut pas transmettre une identité contenant un

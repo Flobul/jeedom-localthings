@@ -30,7 +30,53 @@ try {
         case 'importOwnerPsk':
             ajax::success(localthings::deviceClient()->importOwnerPsk((string) init('host'), array(
                 'owner_uuid' => (string) init('owner_uuid'), 'device_uuid' => (string) init('device_uuid'),
-                'key' => (string) init('key'))));
+                'key' => (string) init('key')), init('port')));
+            break;
+        case 'decodeOwnerPskDatabase':
+            $upload = $_FILES['database'] ?? null;
+            if (!is_array($upload) || (int) ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                throw new Exception(__('Le fichier oic_svr_db_client.dat n’a pas été reçu', __FILE__));
+            }
+            $size = (int) ($upload['size'] ?? 0);
+            $temporary = (string) ($upload['tmp_name'] ?? '');
+            if ($size < 1 || $size > LocalThingsOwnerPskImporter::MAX_DATABASE_BYTES
+                || $temporary === '' || !is_uploaded_file($temporary)) {
+                throw new Exception(__('Fichier OwnerPSK invalide ou trop volumineux', __FILE__));
+            }
+            $database = file_get_contents($temporary);
+            if (!is_string($database) || strlen($database) !== $size) {
+                throw new Exception(__('Lecture du fichier OwnerPSK impossible', __FILE__));
+            }
+            $result = LocalThingsOwnerPskImporter::decodeDatabase($database);
+            $known = array();
+            foreach (localthings::byType('localthings') as $equipment) {
+                $deviceId = preg_replace(
+                    '/[^a-f0-9]/',
+                    '',
+                    strtolower(trim((string) $equipment->getConfiguration('device_id', '')))
+                );
+                if (is_string($deviceId) && strlen($deviceId) === 32) {
+                    $known[$deviceId] = array(
+                        'id' => (int) $equipment->getId(),
+                        'name' => (string) $equipment->getName(),
+                        'host' => (string) $equipment->getConfiguration('host', ''),
+                        'port' => (int) $equipment->getConfiguration('port', 0),
+                    );
+                }
+            }
+            foreach ($result['credentials'] as &$credential) {
+                $deviceId = str_replace('-', '', (string) $credential['device_uuid']);
+                $credential['equipment'] = $known[$deviceId] ?? null;
+            }
+            unset($credential, $database);
+            ajax::success($result);
+            break;
+        case 'probeOwnerPskHosts':
+            $hosts = json_decode((string) init('hosts'), true);
+            if (!is_array($hosts)) {
+                throw new Exception(__('Liste d’adresses OwnerPSK invalide', __FILE__));
+            }
+            ajax::success(localthings::probeHosts($hosts));
             break;
         case 'certificateDiagnostic':
             ajax::success(

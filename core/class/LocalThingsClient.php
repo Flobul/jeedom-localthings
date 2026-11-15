@@ -229,12 +229,21 @@ class LocalThingsDeviceClient
     }
 
     /** Verify an already provisioned key; publish it only after identity and business reads succeed. */
-    public function importOwnerPsk($host, array $credential)
+    public function importOwnerPsk($host, array $credential, $preferredPort = null)
     {
         $host = $this->validateHost($host);
         $credential = LocalThingsOwnerPsk::validate($credential);
-        return $this->withHostLockFor($host, function () use ($host, $credential) {
-            $port = $this->certificateDiagnosticPort($host, null, true);
+        if ($preferredPort === '' || $preferredPort === null || (int) $preferredPort === 0) {
+            $preferredPort = null;
+        } else {
+            $preferredPort = filter_var($preferredPort, FILTER_VALIDATE_INT,
+                array('options' => array('min_range' => 1, 'max_range' => 65535)));
+            if ($preferredPort === false) {
+                throw new InvalidArgumentException(__('Port DTLS OwnerPSK invalide', __FILE__));
+            }
+        }
+        return $this->withHostLockFor($host, function () use ($host, $credential, $preferredPort) {
+            $port = $this->certificateDiagnosticPort($host, $preferredPort, true);
             $session = new LocalThingsSession(new LocalThingsOwnerPskTransport($host, $port, $credential));
             try {
                 $session->connect(12.0);

@@ -26,6 +26,236 @@
     });
   }
 
+  function ajaxPromise(action, data) {
+    return new Promise(function (resolve, reject) {
+      ajax(action, data, resolve, reject);
+    });
+  }
+
+  let ownerPskCredentials = [];
+
+  function ownerPskStatus(index, message, level) {
+    const cell = document.querySelector('[data-ownerpsk-status="' + index + '"]');
+    if (!cell) return;
+    cell.textContent = message;
+    cell.className = level ? "text-" + level : "";
+  }
+
+  function renderOwnerPskCredentials(result) {
+    ownerPskCredentials = Array.isArray(result.credentials) ? result.credentials : [];
+    const summary = document.getElementById("localthings-ownerpsk-database-summary");
+    const container = document.getElementById("localthings-ownerpsk-credentials");
+    const body = document.getElementById("tb_ownerPskCredentials");
+    body.replaceChildren();
+    summary.textContent = "{{Enregistrements OCF}} : " + Number(result.total_credentials || 0)
+      + " · {{clés OwnerPSK utilisables}} : " + ownerPskCredentials.length
+      + (Number(result.invalid_psk_credentials || 0) > 0
+        ? " · {{clés ignorées car invalides}} : " + Number(result.invalid_psk_credentials)
+        : "");
+    container.style.display = ownerPskCredentials.length ? "block" : "none";
+
+    ownerPskCredentials.forEach(function (credential, index) {
+      const row = document.createElement("tr");
+      row.dataset.ownerpskIndex = String(index);
+
+      const selectCell = document.createElement("td");
+      const select = document.createElement("input");
+      select.type = "checkbox";
+      select.className = "ownerpsk-select";
+      select.value = String(index);
+      select.setAttribute("aria-label", "{{Sélectionner cette clé}}");
+      selectCell.appendChild(select);
+      row.appendChild(selectCell);
+
+      const deviceCell = document.createElement("td");
+      if (credential.equipment && credential.equipment.name) {
+        const name = document.createElement("strong");
+        name.textContent = String(credential.equipment.name);
+        deviceCell.appendChild(name);
+        deviceCell.appendChild(document.createElement("br"));
+      }
+      const deviceUuid = document.createElement("code");
+      deviceUuid.textContent = String(credential.device_uuid);
+      deviceCell.appendChild(deviceUuid);
+      row.appendChild(deviceCell);
+
+      const ownerCell = document.createElement("td");
+      const ownerUuid = document.createElement("code");
+      ownerUuid.textContent = String(credential.owner_uuid);
+      ownerCell.appendChild(ownerUuid);
+      row.appendChild(ownerCell);
+
+      const keyCell = document.createElement("td");
+      const keyGroup = document.createElement("div");
+      keyGroup.className = "input-group";
+      const keyInput = document.createElement("input");
+      keyInput.type = "password";
+      keyInput.className = "form-control input-sm ownerpsk-key";
+      keyInput.readOnly = true;
+      keyInput.value = String(credential.key);
+      keyInput.autocomplete = "off";
+      const keyButtons = document.createElement("span");
+      keyButtons.className = "input-group-btn";
+      const reveal = document.createElement("button");
+      reveal.type = "button";
+      reveal.className = "btn btn-default btn-sm bt-ownerpsk-reveal";
+      reveal.dataset.ownerpskIndex = String(index);
+      reveal.textContent = "{{Afficher}}";
+      keyButtons.appendChild(reveal);
+      keyGroup.appendChild(keyInput);
+      keyGroup.appendChild(keyButtons);
+      keyCell.appendChild(keyGroup);
+      row.appendChild(keyCell);
+
+      const hostCell = document.createElement("td");
+      const hostInput = document.createElement("input");
+      hostInput.type = "text";
+      hostInput.inputMode = "decimal";
+      hostInput.className = "form-control input-sm ownerpsk-host";
+      hostInput.placeholder = "192.168.1.20";
+      hostInput.value = credential.equipment && credential.equipment.host
+        ? String(credential.equipment.host)
+        : "";
+      hostCell.appendChild(hostInput);
+      row.appendChild(hostCell);
+
+      const statusCell = document.createElement("td");
+      statusCell.dataset.ownerpskStatus = String(index);
+      statusCell.textContent = credential.equipment ? "{{Équipement connu}}" : "{{Prêt à vérifier}}";
+      row.appendChild(statusCell);
+      body.appendChild(row);
+    });
+  }
+
+  async function uploadOwnerPskDatabase() {
+    if (certificateBusy || scanBusy || scanState.running) return;
+    const input = document.getElementById("in_ownerPskDatabase");
+    const summary = document.getElementById("localthings-ownerpsk-database-summary");
+    const file = input.files && input.files[0];
+    if (!file) {
+      summary.textContent = "{{Sélectionnez le fichier oic_svr_db_client.dat}}";
+      return;
+    }
+    if (file.size < 1 || file.size > 2097152) {
+      summary.textContent = "{{Le fichier doit faire moins de 2 Mio}}";
+      return;
+    }
+    const data = new FormData();
+    data.append("action", "decodeOwnerPskDatabase");
+    data.append("database", file, file.name);
+    summary.textContent = "{{Analyse du fichier CBOR en cours…}}";
+    certificateBusy = true;
+    renderScan(scanState);
+    try {
+      const request = await fetch(endpoint, {
+        method: "POST",
+        body: data,
+        credentials: "same-origin",
+      });
+      const response = await request.json();
+      if (!request.ok || response.state !== "ok") {
+        throw new Error(String(response.result || "{{Analyse impossible}}"));
+      }
+      renderOwnerPskCredentials(response.result);
+    } catch (error) {
+      ownerPskCredentials = [];
+      document.getElementById("localthings-ownerpsk-credentials").style.display = "none";
+      summary.textContent = new DOMParser().parseFromString(
+        String(error && error.message ? error.message : "{{Analyse impossible}}"),
+        "text/html"
+      ).body.textContent;
+    } finally {
+      certificateBusy = false;
+      renderScan(scanState);
+    }
+  }
+
+  async function importSelectedOwnerPsk() {
+    if (certificateBusy || scanBusy || scanState.running) return;
+    const selected = Array.from(document.querySelectorAll(".ownerpsk-select:checked"));
+    if (!selected.length) {
+      jeedomUtils.showAlert({ message: "{{Sélectionnez au moins une clé OwnerPSK}}", level: "warning" });
+      return;
+    }
+    if (selected.length > 20) {
+      jeedomUtils.showAlert({
+        message: "{{Sélectionnez au maximum 20 appareils par import}}",
+        level: "warning",
+      });
+      return;
+    }
+    const successfulHosts = [];
+    const successfulRows = [];
+    certificateBusy = true;
+    renderScan(scanState);
+    try {
+      for (const checkbox of selected) {
+        const index = Number(checkbox.value);
+        const credential = ownerPskCredentials[index];
+        const row = checkbox.closest("tr");
+        const host = row.querySelector(".ownerpsk-host").value.trim();
+        if (!credential || !host) {
+          ownerPskStatus(index, "{{Adresse IPv4 requise}}", "danger");
+          continue;
+        }
+        ownerPskStatus(index, "{{Vérification en cours…}}", "info");
+        try {
+          await ajaxPromise("importOwnerPsk", {
+            host: host,
+            owner_uuid: credential.owner_uuid,
+            device_uuid: credential.device_uuid,
+            key: credential.key,
+            port: credential.equipment && credential.equipment.port
+              ? credential.equipment.port
+              : "",
+          });
+          successfulHosts.push(host);
+          successfulRows.push({
+            index: index,
+            credential: credential,
+            checkbox: checkbox,
+            row: row,
+          });
+          ownerPskStatus(index, "{{Clé vérifiée, ajout en attente…}}", "success");
+        } catch (error) {
+          ownerPskStatus(index, new DOMParser().parseFromString(
+            String(error || "{{Échec de la vérification}}"), "text/html"
+          ).body.textContent, "danger");
+        }
+      }
+      if (successfulHosts.length) {
+        const status = await ajaxPromise("probeOwnerPskHosts", {
+          hosts: JSON.stringify(successfulHosts),
+        });
+        scanGeneration++;
+        scanState = status || { running: true };
+        successfulRows.forEach(function (entry) {
+          entry.credential.key = "";
+          entry.row.querySelector(".ownerpsk-key").value = "";
+          entry.checkbox.checked = false;
+          entry.checkbox.disabled = true;
+          entry.row.querySelector(".ownerpsk-host").disabled = true;
+          ownerPskStatus(entry.index, "{{Ajout en cours…}}", "success");
+        });
+        renderScan(scanState);
+        scheduleScan(250);
+        document.getElementById("localthings-ownerpsk-result").textContent =
+          successfulHosts.length + " {{appareil(s) OwnerPSK ajouté(s) à la découverte}}";
+      }
+    } catch (error) {
+      successfulRows.forEach(function (entry) {
+        ownerPskStatus(entry.index, "{{Clé enregistrée, ajout à relancer}}", "warning");
+      });
+      const message = new DOMParser().parseFromString(
+        String(error || "{{Impossible de démarrer l’ajout des appareils}}"), "text/html"
+      ).body.textContent;
+      jeedomUtils.showAlert({ message: message, level: "warning" });
+    } finally {
+      certificateBusy = false;
+      renderScan(scanState);
+    }
+  }
+
   let scanState = { running: false };
   let scanTimer = null;
   let scanPolling = false;
@@ -73,7 +303,13 @@
     if (probe) probe.disabled = certificateBusy || scanBusy || Boolean(scanState.running);
     // Le diagnostic comparatif ouvre aussi une session DTLS : il ne doit pas
     // concurrencer une découverte sur le même appareil.
-    ["bt_ownerPskDiagnose", "bt_ownerPskImport"].forEach(function (id) {
+    [
+      "bt_ownerPskDiagnose",
+      "bt_ownerPskImport",
+      "bt_ownerPskImportSelected",
+      "bt_ownerPskDatabase",
+      "in_ownerPskDatabase",
+    ].forEach(function (id) {
       const button = document.getElementById(id);
       if (button) button.disabled = certificateBusy || scanBusy || Boolean(scanState.running);
     });
@@ -228,6 +464,31 @@
   pollScan();
 
   root.addEventListener("click", function (event) {
+    if (event.target.closest("#bt_ownerPskDatabase")) {
+      uploadOwnerPskDatabase();
+      return;
+    }
+    if (event.target.closest("#bt_ownerPskImportSelected")) {
+      importSelectedOwnerPsk();
+      return;
+    }
+    const revealOwnerPsk = event.target.closest(".bt-ownerpsk-reveal");
+    if (revealOwnerPsk) {
+      const row = revealOwnerPsk.closest("tr");
+      const input = row.querySelector(".ownerpsk-key");
+      const reveal = input.type === "password";
+      input.type = reveal ? "text" : "password";
+      revealOwnerPsk.textContent = reveal ? "{{Masquer}}" : "{{Afficher}}";
+      return;
+    }
+    if (event.target.closest("#cb_ownerPskSelectAll")) {
+      const checked = event.target.checked === true;
+      document.querySelectorAll(".ownerpsk-select:not(:disabled)").forEach(function (checkbox) {
+        checkbox.checked = checked;
+      });
+      return;
+    }
+
     const scan = event.target.closest("#bt_scanLocalthings");
     if (scan) {
       if (scanBusy || scanState.stop_requested) return;

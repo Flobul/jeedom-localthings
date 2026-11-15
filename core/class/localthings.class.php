@@ -18,13 +18,14 @@ require_once __DIR__ . '/LocalThingsCertificateDiagnostic.php';
 require_once __DIR__ . '/LocalThingsDaemonClient.php';
 require_once __DIR__ . '/LocalThingsDaemon.php';
 require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
+require_once __DIR__ . '/LocalThingsOwnerPskImporter.php';
 
 /**
  * Représente un équipement LocalThings et son intégration au cycle de vie Jeedom.
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.8.2';
+    public static $_pluginVersion = '0.8.3';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -304,17 +305,18 @@ class localthings extends eqLogic
      */
     public static function probeHost($host)
     {
-        if ((new LocalThingsOwnerPsk(self::dataPath()))->load(trim((string) $host)) === null) {
+        $host = trim((string) $host);
+        if ((new LocalThingsOwnerPsk(self::dataPath()))->load($host) === null) {
             self::assertCertificates();
         }
-        log::add(__CLASS__, 'info', sprintf(__('[Discovery] Ajout manuel demandé pour %s', __FILE__), trim((string) $host)));
+        log::add(__CLASS__, 'info', sprintf(__('[Discovery] Ajout manuel demandé pour %s', __FILE__), $host));
         $lease = self::daemonIpc(5.0)->request('discovery.pause', array(), 5000);
         $token = (string) ($lease['token'] ?? '');
         try {
             $status = LocalThingsDiscovery::start(
                 self::resourcePath() . '/discover.php',
                 array(),
-                array((string) $host),
+                array($host),
                 log::getPathToLog(__CLASS__),
                 $token
             );
@@ -322,7 +324,60 @@ class localthings extends eqLogic
             self::resumeDiscoveryLease($token);
             throw $error;
         }
-        log::add(__CLASS__, 'info', sprintf(__('[Discovery] Tâche PHP manuelle lancée, PID=%d', __FILE__), (int) ($status['worker_pid'] ?? 0)));
+        log::add(__CLASS__, 'info', sprintf(
+            __('[Discovery] Tâche PHP manuelle lancée, PID=%d', __FILE__),
+            (int) ($status['worker_pid'] ?? 0)
+        ));
+        return $status;
+    }
+
+    /**
+     * Démarre une découverte exhaustive sur plusieurs adresses déjà munies
+     * d'une clé OwnerPSK vérifiée.
+     *
+     * @param array<int,mixed> $hosts Adresses IPv4 cibles.
+     * @return array<string,mixed> État initial de la tâche.
+     */
+    public static function probeHosts(array $hosts)
+    {
+        if (count($hosts) < 1 || count($hosts) > 20) {
+            throw new InvalidArgumentException(__('Entre 1 et 20 adresses OwnerPSK sont attendues', __FILE__));
+        }
+        $validated = array();
+        $store = new LocalThingsOwnerPsk(self::dataPath());
+        foreach ($hosts as $host) {
+            $host = trim((string) $host);
+            if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new InvalidArgumentException(__('Adresse IPv4 OwnerPSK invalide', __FILE__));
+            }
+            if ($store->load($host) === null) {
+                throw new RuntimeException(__('Aucune clé OwnerPSK vérifiée pour ', __FILE__) . $host);
+            }
+            $validated[$host] = $host;
+        }
+        $validated = array_values($validated);
+        log::add(__CLASS__, 'info', sprintf(
+            __('[Discovery] Ajout OwnerPSK demandé pour %d adresse(s)', __FILE__),
+            count($validated)
+        ));
+        $lease = self::daemonIpc(5.0)->request('discovery.pause', array(), 5000);
+        $token = (string) ($lease['token'] ?? '');
+        try {
+            $status = LocalThingsDiscovery::start(
+                self::resourcePath() . '/discover.php',
+                array(),
+                $validated,
+                log::getPathToLog(__CLASS__),
+                $token
+            );
+        } catch (Throwable $error) {
+            self::resumeDiscoveryLease($token);
+            throw $error;
+        }
+        log::add(__CLASS__, 'info', sprintf(
+            __('[Discovery] Tâche OwnerPSK lancée, PID=%d', __FILE__),
+            (int) ($status['worker_pid'] ?? 0)
+        ));
         return $status;
     }
 

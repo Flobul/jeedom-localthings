@@ -1,8 +1,9 @@
 # Changelog
 ## Non publié
 
+## Version 0.8.3 (15/11/2026)
 
-
+- Le panneau OwnerPSK peut maintenant analyser directement le fichier SmartThings iPhone `oic_svr_db_client.dat`, afficher les clés PSK et les UUID trouvés, puis vérifier et ajouter les appareils sélectionnés sans conserver le fichier ni exposer les secrets dans les logs. Pour un équipement déjà connu, la vérification réutilise son port DTLS mémorisé, y compris lorsqu’il est absent des ports standards de découverte.
 
 ## Version 0.8.2 (14/11/2026)
 

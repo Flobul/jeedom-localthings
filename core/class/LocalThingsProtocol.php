@@ -69,11 +69,29 @@ class LocalThingsCbor
      */
     public static function decode($data, &$consumed = null)
     {
+        return self::decodeLimited($data, PHP_INT_MAX, PHP_INT_MAX, $consumed);
+    }
+
+    /**
+     * Décode une valeur CBOR avec des bornes explicites pour une entrée non fiable.
+     *
+     * @param string $data Données CBOR.
+     * @param int $maxDepth Profondeur maximale des conteneurs et tags.
+     * @param int $maxItems Nombre maximal de valeurs CBOR décodées.
+     * @param int|null $consumed Nombre d'octets consommés, renseigné par référence.
+     * @return mixed Valeur PHP décodée.
+     */
+    public static function decodeLimited($data, $maxDepth, $maxItems, &$consumed = null)
+    {
         if (!is_string($data) || $data === '') {
             throw new InvalidArgumentException(__('Données CBOR vides', __FILE__));
         }
+        if (!is_int($maxDepth) || $maxDepth < 1 || !is_int($maxItems) || $maxItems < 1) {
+            throw new InvalidArgumentException(__('Limites CBOR invalides', __FILE__));
+        }
         $offset = 0;
-        $value = self::decodeValue($data, $offset, false);
+        $items = 0;
+        $value = self::decodeValue($data, $offset, false, 0, $maxDepth, $items, $maxItems);
         $consumed = $offset;
         return $value;
     }
@@ -86,8 +104,23 @@ class LocalThingsCbor
      * @param bool $allowBreak Autorise le marqueur de fin indéfinie.
      * @return mixed
      */
-    private static function decodeValue($data, &$offset, $allowBreak)
+    private static function decodeValue(
+        $data,
+        &$offset,
+        $allowBreak,
+        $depth,
+        $maxDepth,
+        &$items,
+        $maxItems
+    )
     {
+        if ($depth > $maxDepth) {
+            throw new UnexpectedValueException(__('Profondeur CBOR excessive', __FILE__));
+        }
+        $items++;
+        if ($items > $maxItems) {
+            throw new UnexpectedValueException(__('Nombre de valeurs CBOR excessif', __FILE__));
+        }
         self::requireBytes($data, $offset, 1);
         $initial = ord($data[$offset++]);
         if ($initial === 0xFF) {
@@ -113,12 +146,36 @@ class LocalThingsCbor
             case 3:
                 return self::decodeString($data, $offset, $additional, 3);
             case 4:
-                return self::decodeArray($data, $offset, $additional);
+                return self::decodeArray(
+                    $data,
+                    $offset,
+                    $additional,
+                    $depth,
+                    $maxDepth,
+                    $items,
+                    $maxItems
+                );
             case 5:
-                return self::decodeMap($data, $offset, $additional);
+                return self::decodeMap(
+                    $data,
+                    $offset,
+                    $additional,
+                    $depth,
+                    $maxDepth,
+                    $items,
+                    $maxItems
+                );
             case 6:
                 self::readLength($data, $offset, $additional);
-                return self::decodeValue($data, $offset, false);
+                return self::decodeValue(
+                    $data,
+                    $offset,
+                    false,
+                    $depth + 1,
+                    $maxDepth,
+                    $items,
+                    $maxItems
+                );
             case 7:
                 return self::decodeSimple($data, $offset, $additional);
         }
@@ -172,18 +229,42 @@ class LocalThingsCbor
      * @param int $additional Information de longueur CBOR.
      * @return array<int,mixed>
      */
-    private static function decodeArray($data, &$offset, $additional)
+    private static function decodeArray(
+        $data,
+        &$offset,
+        $additional,
+        $depth,
+        $maxDepth,
+        &$items,
+        $maxItems
+    )
     {
         $result = array();
         if ($additional !== 31) {
             $length = self::readLength($data, $offset, $additional);
             for ($index = 0; $index < $length; $index++) {
-                $result[] = self::decodeValue($data, $offset, false);
+                $result[] = self::decodeValue(
+                    $data,
+                    $offset,
+                    false,
+                    $depth + 1,
+                    $maxDepth,
+                    $items,
+                    $maxItems
+                );
             }
             return $result;
         }
         while (true) {
-            $item = self::decodeValue($data, $offset, true);
+            $item = self::decodeValue(
+                $data,
+                $offset,
+                true,
+                $depth + 1,
+                $maxDepth,
+                $items,
+                $maxItems
+            );
             if ($item instanceof LocalThingsCborBreakMarker) {
                 return $result;
             }
@@ -199,18 +280,42 @@ class LocalThingsCbor
      * @param int $additional Information de longueur CBOR.
      * @return array<mixed,mixed>
      */
-    private static function decodeMap($data, &$offset, $additional)
+    private static function decodeMap(
+        $data,
+        &$offset,
+        $additional,
+        $depth,
+        $maxDepth,
+        &$items,
+        $maxItems
+    )
     {
         $result = array();
         $remaining = $additional === 31
             ? null
             : self::readLength($data, $offset, $additional);
         while ($remaining === null || $remaining > 0) {
-            $key = self::decodeValue($data, $offset, $remaining === null);
+            $key = self::decodeValue(
+                $data,
+                $offset,
+                $remaining === null,
+                $depth + 1,
+                $maxDepth,
+                $items,
+                $maxItems
+            );
             if ($key instanceof LocalThingsCborBreakMarker && $remaining === null) {
                 return $result;
             }
-            $value = self::decodeValue($data, $offset, false);
+            $value = self::decodeValue(
+                $data,
+                $offset,
+                false,
+                $depth + 1,
+                $maxDepth,
+                $items,
+                $maxItems
+            );
             if (is_int($key) || is_string($key)) {
                 $result[$key] = $value;
             } else {

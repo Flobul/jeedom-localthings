@@ -58,16 +58,77 @@ $eqLogics = eqLogic::byType($plugin->getId());
                 <p>{{Le diagnostic lit l’état d’association et sonde le transport PSK sans modifier l’appareil. Une réponse à la sonde ne prouve pas que l’accès est autorisé.}}</p>
                 <button type="button" id="bt_ownerPskDiagnose" class="btn btn-info">{{Diagnostiquer cette adresse}}</button>
                 <pre id="localthings-ownerpsk-result" style="white-space:pre-wrap;"></pre>
-                <details>
-                    <summary>{{Utiliser une clé OwnerPSK déjà provisionnée}}</summary>
-                    <p>{{Cette clé doit déjà être installée dans l’appareil par une association autorisée. Le plugin ne peut pas la récupérer depuis les informations publiques. Elle sera enregistrée seulement après vérification de l’appareil, du propriétaire et des lectures métier.}}</p>
-                    <label for="in_ownerPskOwner">{{UUID OCF du propriétaire}}</label>
-                    <input id="in_ownerPskOwner" class="form-control" type="text" autocomplete="off" spellcheck="false">
-                    <label for="in_ownerPskDevice">{{UUID OCF de l’appareil}}</label>
-                    <input id="in_ownerPskDevice" class="form-control" type="text" autocomplete="off" spellcheck="false">
-                    <label for="in_ownerPskKey">{{OwnerPSK (32 ou 64 caractères hexadécimaux)}}</label>
-                    <input id="in_ownerPskKey" class="form-control" type="password" autocomplete="new-password" spellcheck="false">
-                    <button type="button" id="bt_ownerPskImport" class="btn btn-primary">{{Vérifier et enregistrer la clé}}</button>
+                <div class="localthings-ownerpsk-choice-intro">
+                    <strong>{{Choisissez comment fournir la clé OwnerPSK}}</strong>
+                    <span>{{Cliquez sur une option ci-dessous pour afficher son formulaire.}}</span>
+                </div>
+                <details id="localthings-ownerpsk-database-panel" class="localthings-ownerpsk-method" open>
+                    <summary>
+                        <span class="localthings-ownerpsk-method-icon"><i class="fas fa-mobile-alt"></i></span>
+                        <span class="localthings-ownerpsk-method-copy">
+                            <strong>{{Importer depuis une sauvegarde iPhone}}</strong>
+                            <small class="localthings-ownerpsk-method-description">{{Sélectionner le fichier oic_svr_db_client.dat et choisir les appareils à ajouter.}}</small>
+                        </span>
+                        <span class="localthings-ownerpsk-method-action">
+                            <span class="localthings-ownerpsk-open-label">{{Ouvrir}}</span>
+                            <span class="localthings-ownerpsk-close-label">{{Refermer}}</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </span>
+                    </summary>
+                    <div class="localthings-ownerpsk-method-body">
+                        <p>{{Sélectionnez le fichier SmartThings Library/Security/oic_svr_db_client.dat déjà extrait de la sauvegarde. Il est décodé en mémoire, n’est pas conservé et son contenu n’est jamais écrit dans les logs.}}</p>
+                        <div class="input-group">
+                            <input id="in_ownerPskDatabase" class="form-control" type="file" accept=".dat,application/octet-stream">
+                            <span class="input-group-btn">
+                                <button type="button" id="bt_ownerPskDatabase" class="btn btn-default roundedRight">
+                                    <i class="fas fa-search"></i> {{Analyser}}
+                                </button>
+                            </span>
+                        </div>
+                        <div id="localthings-ownerpsk-database-summary" class="help-block"></div>
+                        <div id="localthings-ownerpsk-credentials" class="table-responsive" style="display:none; margin-top:10px;">
+                            <table class="table table-condensed table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th style="width:36px;"><input id="cb_ownerPskSelectAll" type="checkbox" aria-label="{{Tout sélectionner}}"></th>
+                                        <th>{{Appareil OCF}}</th>
+                                        <th>{{UUID propriétaire}}</th>
+                                        <th>{{OwnerPSK}}</th>
+                                        <th>{{Adresse IPv4}}</th>
+                                        <th>{{État}}</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tb_ownerPskCredentials"></tbody>
+                            </table>
+                            <button type="button" id="bt_ownerPskImportSelected" class="btn btn-primary">
+                                <i class="fas fa-file-import"></i> {{Vérifier et ajouter la sélection}}
+                            </button>
+                        </div>
+                    </div>
+                </details>
+                <details class="localthings-ownerpsk-method">
+                    <summary>
+                        <span class="localthings-ownerpsk-method-icon"><i class="fas fa-keyboard"></i></span>
+                        <span class="localthings-ownerpsk-method-copy">
+                            <strong>{{Utiliser une clé OwnerPSK déjà provisionnée}}</strong>
+                            <small class="localthings-ownerpsk-method-description">{{Saisir manuellement les UUID OCF et la clé hexadécimale.}}</small>
+                        </span>
+                        <span class="localthings-ownerpsk-method-action">
+                            <span class="localthings-ownerpsk-open-label">{{Ouvrir}}</span>
+                            <span class="localthings-ownerpsk-close-label">{{Refermer}}</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </span>
+                    </summary>
+                    <div class="localthings-ownerpsk-method-body">
+                        <p>{{Cette clé doit déjà être installée dans l’appareil par une association autorisée. Le plugin ne peut pas la récupérer depuis les informations publiques. Elle sera enregistrée seulement après vérification de l’appareil, du propriétaire et des lectures métier.}}</p>
+                        <label for="in_ownerPskOwner">{{UUID OCF du propriétaire}}</label>
+                        <input id="in_ownerPskOwner" class="form-control" type="text" autocomplete="off" spellcheck="false">
+                        <label for="in_ownerPskDevice">{{UUID OCF de l’appareil}}</label>
+                        <input id="in_ownerPskDevice" class="form-control" type="text" autocomplete="off" spellcheck="false">
+                        <label for="in_ownerPskKey">{{OwnerPSK (32 ou 64 caractères hexadécimaux)}}</label>
+                        <input id="in_ownerPskKey" class="form-control" type="password" autocomplete="new-password" spellcheck="false">
+                        <button type="button" id="bt_ownerPskImport" class="btn btn-primary">{{Vérifier et enregistrer la clé}}</button>
+                    </div>
                 </details>
             </div>
             <div id="localthings-certificate-result" class="localthings-certificate-result" style="display:none;"></div>
