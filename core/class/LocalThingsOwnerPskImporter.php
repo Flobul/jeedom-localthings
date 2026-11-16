@@ -61,12 +61,6 @@ class LocalThingsOwnerPskImporter
                 continue;
             }
             try {
-                self::assertTransportOwnerUuid($ownerUuid);
-            } catch (Throwable $error) {
-                self::markInvalid($invalid, $invalidReasons, 'owner_uuid_transport_incompatible');
-                continue;
-            }
-            try {
                 $deviceUuid = self::normalizeUuid($record['subjectuuid'] ?? null);
             } catch (Throwable $error) {
                 self::markInvalid($invalid, $invalidReasons, 'device_uuid_invalid');
@@ -168,13 +162,6 @@ class LocalThingsOwnerPskImporter
         throw new UnexpectedValueException('invalid key');
     }
 
-    private static function assertTransportOwnerUuid($uuid)
-    {
-        $bytes = hex2bin(str_replace('-', '', $uuid));
-        if (!is_string($bytes) || strpos($bytes, "\0") !== false) {
-            throw new UnexpectedValueException('unsupported owner uuid');
-        }
-    }
 
     private static function markInvalid(&$invalid, array &$reasons, $reason)
     {

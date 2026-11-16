@@ -1,6 +1,13 @@
 # Changelog
 ## Non publié
 
+## Version 0.8.5 (16/11/2026)
+
+- Les credentials OwnerPSK dont l’UUID propriétaire binaire contient un octet nul sont maintenant importables et utilisables. Le transport OpenSSL limité aux identités terminées par zéro est remplacé sur ce chemin par un moteur DTLS à longueur explicite, sans exposer les clés dans les arguments ni les journaux.
+- Import du fichier `oic_svr_db_client.dat` depuis la sauvegarde iPhone : l’analyse reste séparée de la vérification, l’import s’effectue par lots de 20 appareils maximum et les lignes répertoriées ne sont supprimées qu’après une découverte réussie ; une erreur de découverte ne bloque pas la nouvelle tentative.
+
+- Les credentials OwnerPSK dont l’UUID propriétaire binaire contient un octet nul sont maintenant importables et utilisables. Le transport OpenSSL limité aux identités terminées par zéro est remplacé sur ce chemin par un moteur DTLS à longueur explicite, sans exposer les clés dans les arguments ni les journaux.
+
 ## Version 0.8.4 (16/11/2026)
 
 - L’import iPhone distingue maintenant les credentials PSK réellement détectés des clés utilisables et indique, sans exposer les secrets, pourquoi une entrée est ignorée : UUID invalide, identité propriétaire incompatible avec le transport DTLS, clé absente ou format non pris en charge.

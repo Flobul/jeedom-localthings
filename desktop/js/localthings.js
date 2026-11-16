@@ -49,7 +49,6 @@
     body.replaceChildren();
     const invalidReasonLabels = {
       owner_uuid_invalid: "{{UUID propriétaire absent ou invalide}}",
-      owner_uuid_transport_incompatible: "{{identité propriétaire incompatible avec le transport DTLS}}",
       device_uuid_invalid: "{{UUID appareil absent ou invalide}}",
       private_data_missing: "{{clé privée absente}}",
       key_invalid: "{{format ou longueur de clé non pris en charge}}",

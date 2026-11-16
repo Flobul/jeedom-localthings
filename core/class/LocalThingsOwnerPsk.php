@@ -23,11 +23,8 @@ class LocalThingsOwnerPsk
 
     public static function validate(array $credential)
     {
-        $owner = self::uuidBytes($credential['owner_uuid'] ?? null);
+        self::uuidBytes($credential['owner_uuid'] ?? null);
         self::uuidBytes($credential['device_uuid'] ?? null);
-        if (strpos($owner, "\0") !== false) {
-            throw new InvalidArgumentException(__('UUID propriétaire incompatible avec le transport OpenSSL : octet nul', __FILE__));
-        }
         if (!isset($credential['key']) || !is_string($credential['key'])
             || !preg_match('/^(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{64})$/D', $credential['key'])) {
             throw new InvalidArgumentException(__('OwnerPSK attendue : 32 ou 64 caractères hexadécimaux (16 ou 32 octets)', __FILE__));
@@ -109,10 +106,10 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
 {
     private $host;
     private $port;
-    private $credential;
+    private $credential; // credential validated by LocalThingsOwnerPsk
+    private $localPort;
     private $process;
     private $pipes = array();
-    private $sourcePort;
 
     public function __construct($host, $port, array $credential)
     {
@@ -120,8 +117,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
             throw new InvalidArgumentException(__('Endpoint OwnerPSK invalide', __FILE__));
         }
         $this->host = $host; $this->port = (int) $port;
-        $this->credential = LocalThingsOwnerPsk::validate($credential);
-        $this->sourcePort = 40000 + ((ip2long($this->host) & 0xFFFF) % 20000);
+        $this->credential = call_user_func(array('LocalThingsOwnerPsk', 'validate'), $credential);
     }
 
     public function connect($timeout = 12.0)
@@ -134,7 +130,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         stream_set_blocking($this->pipes[1], false);
         try {
             $this->rpc(array('action' => 'connect', 'host' => $this->host, 'port' => $this->port,
-                'source_port' => $this->sourcePort,
+                'source_port' => $this->localPort,
                 'identity' => bin2hex(LocalThingsOwnerPsk::uuidBytes($this->credential['owner_uuid'])),
                 'key' => $this->credential['key'], 'timeout' => $timeout), $timeout + 2);
             // Verify the device binding before exposing this session to normal reads/writes.

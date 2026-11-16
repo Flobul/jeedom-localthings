@@ -212,9 +212,9 @@ Le bouton **OwnerPSK** de la barre de découverte ouvre trois fonctions :
    **Ajouter par IP** pour créer l’équipement.
 
 Le transport utilise `ECDHE-PSK-AES128-CBC-SHA256` et l’UUID propriétaire sous
-forme de 16 octets. OpenSSL ne peut pas transmettre une identité contenant un
-octet nul : ces clés sont refusées explicitement. Python 3 et une bibliothèque
-OpenSSL libssl avec DTLS PSK sont nécessaires ; aucun paquet Python tiers n’est requis.
+forme de 16 octets. Le moteur DTLS OwnerPSK conserve explicitement la longueur
+de cette identité et accepte donc les UUID binaires contenant des octets nuls.
+Python 3 et le paquet système `python3-cryptography` sont nécessaires.
 Les secrets circulent vers le transport par un tube privé, jamais par les arguments
 ou l’environnement. Le fichier de clé est privé (0600, répertoire 0700) et protégé
 contre l’exécution HTTP. Les sauvegardes du répertoire `data` contiennent ces secrets.

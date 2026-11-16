@@ -483,7 +483,7 @@
         "Transport OwnerPSK interrompu": "Transporte OwnerPSK interrompido",
         "UUID OCF canonique attendu": "UUID canónico OCF esperado",
         "UUID OCF nul interdit": "Não é permitido um UUID OCF nulo",
-        "UUID propriétaire incompatible avec le transport OpenSSL : octet nul": "UUID proprietário incompatível com o transporte OpenSSL: byte nulo",
+
         "État DTLS de dérivation invalide": "Estado DTLS de derivação inválido",
         "OwnerPSK attendue : 32 caractères hexadécimaux (16 octets)": "PSK do proprietário esperado: 32 caracteres hexadecimais (16 octetos)"
     },

@@ -2,7 +2,9 @@
   "apt": {
     "openssl": {},
     "ca-certificates": {},
-    "iputils-ping": {}
+    "iputils-ping": {},
+    "python3": {},
+    "python3-cryptography": {}
   },
   "post-install": {
     "script": "plugins/localthings/resources/install.sh"
