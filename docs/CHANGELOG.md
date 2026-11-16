@@ -4,6 +4,7 @@
 ## Version 0.8.4 (16/11/2026)
 
 - L’import iPhone distingue maintenant les credentials PSK réellement détectés des clés utilisables et indique, sans exposer les secrets, pourquoi une entrée est ignorée : UUID invalide, identité propriétaire incompatible avec le transport DTLS, clé absente ou format non pris en charge.
+- Le widget des réfrigérateurs affiche séparément les états des portes du congélateur et du réfrigérateur lorsqu’ils sont tous les deux remontés par l’appareil. Le classement des commandes du widget repose désormais sur leur clé sémantique stable plutôt que sur leur nom visible, qui peut être renommé dans Jeedom.
 
 ## Version 0.8.3 (15/11/2026)
 

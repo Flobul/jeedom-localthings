@@ -1821,7 +1821,8 @@ class localthings extends eqLogic
         });
         $statusSlots = array();
         foreach ($statusCandidates as $command) {
-            $slot = LocalThingsWidget::statusSlot(
+            $slot = LocalThingsWidget::statusDeduplicationKey(
+                $profile['type'],
                 $command->getConfiguration('entityKey', ''),
                 $command->getName()
             );

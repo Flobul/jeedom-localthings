@@ -181,9 +181,7 @@ class LocalThingsWidget
      */
     public static function group($deviceType, $entityKey, $commandType, $subType = '', $category = '', $name = '')
     {
-        $identity = strtolower(
-            (string) $entityKey . ' ' . (string) $name
-        );
+        $identity = self::commandIdentity($entityKey, $name);
         $commandType = strtolower((string) $commandType);
         $category = strtolower((string) $category);
         $profile = self::profile($deviceType);
@@ -272,7 +270,7 @@ class LocalThingsWidget
      */
     public static function detailRole($entityKey, $name = '')
     {
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         if (preg_match('/(?:kids?lock|child[ _-]?lock)/', $identity)) {
             return strpos($identity, 'bypass') === false ? 'child_lock' : '';
         }
@@ -387,7 +385,7 @@ class LocalThingsWidget
      */
     public static function maintenanceRole($entityKey, $name = '')
     {
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         if (strpos($identity, 'maintenance_drum_clean_status') !== false) {
             return 'drum_clean_status';
         }
@@ -424,7 +422,7 @@ class LocalThingsWidget
      */
     public static function energyRole($entityKey, $name = '')
     {
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         if (preg_match('/(?:power|consumption).*(?:unit|date|utc|timestamp)/', $identity)) {
             return '';
         }
@@ -467,7 +465,7 @@ class LocalThingsWidget
     public static function presentation($deviceType, $entityKey, $commandType, $group, $name = '')
     {
         $deviceType = self::profile($deviceType)['type'];
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         $presentation = array('label' => '', 'icon' => '', 'asset' => '');
         if ($deviceType === 'airconditioner') {
             if (preg_match('/^mode_(?:vs_)?\d+_modes_/', $entityKey)) {
@@ -571,6 +569,14 @@ class LocalThingsWidget
             'battery' => array('label' => __('Batterie', __FILE__), 'icon' => 'fas fa-battery-half', 'asset' => ''),
         );
         if ($group === 'status' && isset($statusPresentations[$statusSlot])) {
+            if ($deviceType === 'refrigerator' && $statusSlot === 'door') {
+                if (preg_match('/(?:freezer|cong[eé]lateur)/u', $identity)) {
+                    return array('label' => __('Porte congélateur', __FILE__), 'icon' => 'fas fa-door-open', 'asset' => '');
+                }
+                if (preg_match('/(?:fridge|cooler|r[eé]frig[eé]rateur)/u', $identity)) {
+                    return array('label' => __('Porte réfrigérateur', __FILE__), 'icon' => 'fas fa-door-open', 'asset' => '');
+                }
+            }
             return $statusPresentations[$statusSlot];
         }
 
@@ -645,7 +651,7 @@ class LocalThingsWidget
      */
     public static function statusSlot($entityKey, $name = '')
     {
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         if (self::isTechnicalDetail($identity) || strpos($identity, 'airqualitystandard') !== false) {
             return '';
         }
@@ -664,7 +670,7 @@ class LocalThingsWidget
         if (preg_match('/(?:door.*state|contact.*state|état.*porte)/', $identity)) {
             return 'door';
         }
-        if (preg_match('/(?:temperature_current|current.*temperature|roomtemperature|température actuelle)/', $identity)) {
+        if (preg_match('/(?:temperature_current|temperatureitem.*current|current.*temperature|roomtemperature|température actuelle)/', $identity)) {
             return 'temperature';
         }
         if (preg_match('/(?:humidity_current|current.*humidity|humidity_vs_\d+_humidity|humidité actuelle)/', $identity)) {
@@ -683,6 +689,29 @@ class LocalThingsWidget
     }
 
     /**
+     * Retourne la clé utilisée pour dédupliquer les états principaux du widget.
+     * Les réfrigérateurs conservent chaque capteur de porte car plusieurs
+     * compartiments peuvent exposer simultanément leur propre état.
+     *
+     * @param string $deviceType Type d'appareil.
+     * @param string $entityKey Clé sémantique de l'entité.
+     * @param string $name Nom visible de la commande.
+     * @return string
+     */
+    public static function statusDeduplicationKey($deviceType, $entityKey, $name = '')
+    {
+        $slot = self::statusSlot($entityKey, $name);
+        if (self::profile($deviceType)['type'] !== 'refrigerator' || $slot !== 'door') {
+            return $slot;
+        }
+        $identity = trim((string) $entityKey);
+        if ($identity === '') {
+            $identity = trim((string) $name);
+        }
+        return 'door:' . strtolower($identity);
+    }
+
+    /**
      * Calcule l'ordre d'affichage d'un état principal.
      *
      * @param string $deviceType Type d'appareil.
@@ -694,7 +723,7 @@ class LocalThingsWidget
     {
         $slot = self::statusSlot($entityKey, $name);
         $deviceType = self::profile($deviceType)['type'];
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         $priorities = array(
             'state' => 10,
             'remaining' => 20,
@@ -758,7 +787,7 @@ class LocalThingsWidget
      */
     public static function priority($deviceType, $entityKey, $name = '')
     {
-        $identity = strtolower((string) $entityKey . ' ' . (string) $name);
+        $identity = self::commandIdentity($entityKey, $name);
         $priorities = array(
             4 => array('alarms_vs', 'alarme'),
             5 => array('maintenance_drum_clean_status'),
@@ -801,6 +830,26 @@ class LocalThingsWidget
             }
         }
         return false;
+    }
+
+    /**
+     * Utilise l'identifiant sémantique stable d'une commande pour le widget.
+     * Le nom visible, modifiable par l'utilisateur, ne sert que de compatibilité
+     * pour les anciennes commandes qui ne possèdent pas encore d'entityKey.
+     *
+     * @param string $entityKey Clé sémantique générée par LocalThings.
+     * @param string $name Nom visible de la commande.
+     * @return string
+     */
+    private static function commandIdentity($entityKey, $name = '')
+    {
+        $identity = trim((string) $entityKey);
+        if ($identity === '') {
+            $identity = trim((string) $name);
+        }
+        return function_exists('mb_strtolower')
+            ? mb_strtolower($identity, 'UTF-8')
+            : strtolower($identity);
     }
 
 }
