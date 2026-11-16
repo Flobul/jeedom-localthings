@@ -47,10 +47,23 @@
     const container = document.getElementById("localthings-ownerpsk-credentials");
     const body = document.getElementById("tb_ownerPskCredentials");
     body.replaceChildren();
+    const invalidReasonLabels = {
+      owner_uuid_invalid: "{{UUID propriétaire absent ou invalide}}",
+      owner_uuid_transport_incompatible: "{{identité propriétaire incompatible avec le transport DTLS}}",
+      device_uuid_invalid: "{{UUID appareil absent ou invalide}}",
+      private_data_missing: "{{clé privée absente}}",
+      key_invalid: "{{format ou longueur de clé non pris en charge}}",
+    };
+    const invalidReasons = Object.entries(result.invalid_reasons || {}).map(function (entry) {
+      return (invalidReasonLabels[entry[0]] || "{{credential non pris en charge}}")
+        + " : " + Number(entry[1]);
+    });
     summary.textContent = "{{Enregistrements OCF}} : " + Number(result.total_credentials || 0)
+      + " · {{credentials PSK détectés}} : " + Number(result.psk_records || 0)
       + " · {{clés OwnerPSK utilisables}} : " + ownerPskCredentials.length
       + (Number(result.invalid_psk_credentials || 0) > 0
-        ? " · {{clés ignorées car invalides}} : " + Number(result.invalid_psk_credentials)
+        ? " · {{clés ignorées}} : " + Number(result.invalid_psk_credentials)
+          + (invalidReasons.length ? " (" + invalidReasons.join(" ; ") + ")" : "")
         : "");
     container.style.display = ownerPskCredentials.length ? "block" : "none";
 

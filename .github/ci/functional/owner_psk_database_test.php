@@ -107,6 +107,11 @@ $nullOwnerDatabase = "\xA1\x64cred" . cborByteString(LocalThingsCbor::encode($nu
 $nullOwner = LocalThingsOwnerPskImporter::decodeDatabase($nullOwnerDatabase);
 assertOwnerPskDatabase($nullOwner['psk_credentials'] === 0, 'OpenSSL-incompatible owner UUID must not be offered');
 assertOwnerPskDatabase($nullOwner['invalid_psk_credentials'] === 1, 'Incompatible owner UUID must be counted as invalid');
+assertOwnerPskDatabase($nullOwner['psk_records'] === 1, 'Detected PSK records must be counted before compatibility filtering');
+assertOwnerPskDatabase(
+    ($nullOwner['invalid_reasons']['owner_uuid_transport_incompatible'] ?? 0) === 1,
+    'OpenSSL-incompatible identity must have an explicit safe diagnostic'
+);
 
 $largeValue = array_fill(0, 100001, 1);
 $largeCbor = LocalThingsCbor::encode($largeValue);

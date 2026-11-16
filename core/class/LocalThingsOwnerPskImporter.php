@@ -47,35 +47,57 @@ class LocalThingsOwnerPskImporter
         $defaultOwner = $credentialResource['rowneruuid'] ?? null;
         $credentials = array();
         $invalid = 0;
+        $pskRecords = 0;
+        $invalidReasons = array();
         foreach ($records as $record) {
             if (!is_array($record) || (int) ($record['credtype'] ?? 0) !== 1) {
                 continue;
             }
+            $pskRecords++;
             try {
                 $ownerUuid = self::normalizeUuid($record['rowneruuid'] ?? $defaultOwner);
-                self::assertTransportOwnerUuid($ownerUuid);
-                $deviceUuid = self::normalizeUuid($record['subjectuuid'] ?? null);
-                $privateData = $record['privatedata'] ?? null;
-                if (!is_array($privateData) || !array_key_exists('data', $privateData)) {
-                    throw new UnexpectedValueException('missing private data');
-                }
-                $key = self::normalizeKey($privateData['data']);
-                $deduplicationKey = $ownerUuid . '|' . $deviceUuid . '|' . $key;
-                $credentials[$deduplicationKey] = array(
-                    'owner_uuid' => $ownerUuid,
-                    'device_uuid' => $deviceUuid,
-                    'key' => $key,
-                    'key_bytes' => (int) (strlen($key) / 2),
-                );
             } catch (Throwable $error) {
-                $invalid++;
+                self::markInvalid($invalid, $invalidReasons, 'owner_uuid_invalid');
+                continue;
             }
+            try {
+                self::assertTransportOwnerUuid($ownerUuid);
+            } catch (Throwable $error) {
+                self::markInvalid($invalid, $invalidReasons, 'owner_uuid_transport_incompatible');
+                continue;
+            }
+            try {
+                $deviceUuid = self::normalizeUuid($record['subjectuuid'] ?? null);
+            } catch (Throwable $error) {
+                self::markInvalid($invalid, $invalidReasons, 'device_uuid_invalid');
+                continue;
+            }
+            $privateData = $record['privatedata'] ?? null;
+            if (!is_array($privateData) || !array_key_exists('data', $privateData)) {
+                self::markInvalid($invalid, $invalidReasons, 'private_data_missing');
+                continue;
+            }
+            try {
+                $key = self::normalizeKey($privateData['data']);
+            } catch (Throwable $error) {
+                self::markInvalid($invalid, $invalidReasons, 'key_invalid');
+                continue;
+            }
+            $deduplicationKey = $ownerUuid . '|' . $deviceUuid . '|' . $key;
+            $credentials[$deduplicationKey] = array(
+                'owner_uuid' => $ownerUuid,
+                'device_uuid' => $deviceUuid,
+                'key' => $key,
+                'key_bytes' => (int) (strlen($key) / 2),
+            );
         }
 
         return array(
             'total_credentials' => count($records),
+            'psk_records' => $pskRecords,
             'psk_credentials' => count($credentials),
             'invalid_psk_credentials' => $invalid,
+            'invalid_reasons' => $invalidReasons,
             'credentials' => array_values($credentials),
         );
     }
@@ -152,5 +174,11 @@ class LocalThingsOwnerPskImporter
         if (!is_string($bytes) || strpos($bytes, "\0") !== false) {
             throw new UnexpectedValueException('unsupported owner uuid');
         }
+    }
+
+    private static function markInvalid(&$invalid, array &$reasons, $reason)
+    {
+        $invalid++;
+        $reasons[$reason] = (int) ($reasons[$reason] ?? 0) + 1;
     }
 }

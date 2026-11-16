@@ -38,6 +38,8 @@ checks = {
     "native FormData": "new FormData()" in js,
     "native fetch": "fetch(endpoint" in js,
     "result renderer": "renderOwnerPskCredentials" in js,
+    "invalid PSK reason rendered": "owner_uuid_transport_incompatible" in js
+    and "{{identité propriétaire incompatible avec le transport DTLS}}" in js,
     "selected import": "bt_ownerPskImportSelected" in page and "importSelectedOwnerPsk" in js,
     "known endpoint reused": "'port' => (int) $equipment->getConfiguration('port', 0)" in ajax
     and "port: credential.equipment && credential.equipment.port" in js
