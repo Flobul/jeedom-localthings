@@ -1,7 +1,8 @@
 <?php
 $root = dirname(__DIR__, 3);
-require_once $root . '/core/class/LocalThingsDaemonClient.php';
-require_once $root . '/core/class/LocalThingsDaemon.php';
+require_once dirname(__DIR__, 3) . '/core/class/LocalThingsDaemonClient.php';
+require_once dirname(__DIR__, 3) . '/core/class/LocalThingsProtocol.php';
+require_once dirname(__DIR__, 3) . '/core/class/LocalThingsDaemon.php';
 
 function check($condition, $message)
 {
@@ -20,12 +21,20 @@ if (($argv[1] ?? '') === '--serve') {
     $runtime = $argv[2] ?? '';
     $daemon = new LocalThingsDaemon(
         $runtime,
-        function ($operation, $payload) {
+        function ($operation, $payload) use ($runtime) {
             if ($operation === 'echo') {
                 return array('payload' => $payload, 'pid' => getmypid());
             }
             if ($operation === 'sleep') {
                 usleep(max(0, min(3000, (int) ($payload['milliseconds'] ?? 0))) * 1000);
+                return array('slept' => true);
+            }
+            if ($operation === 'mark') {
+                file_put_contents($runtime . '/stale-operation-ran', 'yes');
+                return array('marked' => true);
+            }
+            if ($operation === 'cooperative.sleep') {
+                LocalThingsOperationDeadline::sleepMicros(1000000);
                 return array('slept' => true);
             }
             throw new InvalidArgumentException('unsupported operation');
@@ -65,6 +74,31 @@ try {
     $result = $client->request('echo', array('value' => 42), 2000);
     check(($result['payload']['value'] ?? null) === 42, 'NDJSON request round-trip works');
     check(($result['pid'] ?? 0) === ($health['pid'] ?? -1), 'one daemon owns all requests');
+
+    $expired = stream_socket_client('unix://' . $runtime . '/daemon.sock', $errno, $error, 1.0);
+    check(is_resource($expired), 'expired request can reach daemon socket');
+    $expiredId = str_repeat('a', 32);
+    fwrite($expired, json_encode(array(
+        'v' => 1,
+        'id' => $expiredId,
+        'op' => 'mark',
+        'deadline_ms' => 100,
+        'expires_at_ms' => (int) floor(microtime(true) * 1000) - 1,
+        'payload' => array(),
+    )) . "\n");
+    $expiredResponse = json_decode((string) fgets($expired), true);
+    fclose($expired);
+    check(($expiredResponse['error']['code'] ?? '') === 'DEADLINE_EXCEEDED', 'expired request is rejected');
+    check(!is_file($runtime . '/stale-operation-ran'), 'expired request handler is never executed');
+
+    $cooperativeStarted = microtime(true);
+    try {
+        $client->request('cooperative.sleep', array(), 100);
+        check(false, 'cooperative operation should exceed its deadline');
+    } catch (LocalThingsDaemonRemoteException $error) {
+        check($error->remoteCode() === 'DEADLINE_EXCEEDED', 'cooperative deadline error is preserved');
+    }
+    check(microtime(true) - $cooperativeStarted < 0.5, 'cooperative work stops near its deadline');
 
     $busyProcess = proc_open(
         array(PHP_BINARY, __FILE__, '--sleep-request', $runtime),
@@ -122,8 +156,8 @@ try {
         if (strpos($source, 'public function localPort()') === false) {
             $issues[] = 'OwnerPSK lacks public localPort()';
         }
-        if (strpos($helper, 'SSL_shutdown') === false) {
-            $issues[] = 'OwnerPSK helper lacks SSL_shutdown';
+        if (strpos($helper, 'DtlsPskClient') === false || strpos($helper, 'engine.shutdown()') === false) {
+            $issues[] = 'OwnerPSK helper lacks explicit DTLS shutdown';
         }
         if (strpos($helper, "action == 'close'") === false) {
             $issues[] = 'OwnerPSK helper lacks explicit close action';

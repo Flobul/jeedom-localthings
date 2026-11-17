@@ -138,6 +138,19 @@ class LocalThingsDaemon
                 return;
             }
             $operation = $request['op'];
+            $expiresAtMs = (int) ($request['expires_at_ms'] ?? 0);
+            if ($expiresAtMs > 0 && (int) floor(microtime(true) * 1000) >= $expiresAtMs) {
+                $this->writeResponse($connection, $id, false, null, array(
+                    'code' => 'DEADLINE_EXCEEDED',
+                    'message' => 'Délai de la requête IPC dépassé',
+                    'retryable' => true,
+                    'phase' => 'ipc',
+                ));
+                return;
+            }
+            if (class_exists('LocalThingsOperationDeadline')) {
+                LocalThingsOperationDeadline::setEpochMilliseconds($expiresAtMs);
+            }
             if ($operation === 'health') {
                 $result = array('pid' => getmypid(), 'heartbeat' => time());
             } elseif ($operation === 'stop') {
@@ -155,6 +168,9 @@ class LocalThingsDaemon
                 'phase' => method_exists($error, 'phase') ? $error->phase() : '',
             ));
         } finally {
+            if (class_exists('LocalThingsOperationDeadline')) {
+                LocalThingsOperationDeadline::clear();
+            }
             fclose($connection);
         }
     }

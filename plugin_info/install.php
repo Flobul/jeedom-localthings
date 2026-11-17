@@ -83,6 +83,16 @@ function localthings_update()
     config::remove('poll_interval', 'localthings');
     config::remove('daemon_port', 'localthings');
     localthings_remove_legacy_poll_cron();
+    if (class_exists('localthings')) {
+        try { localthings::deamon_stop(); } catch (Throwable $error) {}
+        if ((int) config::byKey('deamonAutoMode', 'localthings', 1) === 1) {
+            try {
+                localthings::deamon_start();
+            } catch (Throwable $error) {
+                log::add('localthings', 'warning', '[Update] Redémarrage du démon différé : ' . $error->getMessage());
+            }
+        }
+    }
 }
 
 /**

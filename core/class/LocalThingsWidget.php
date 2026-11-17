@@ -569,12 +569,20 @@ class LocalThingsWidget
             'battery' => array('label' => __('Batterie', __FILE__), 'icon' => 'fas fa-battery-half', 'asset' => ''),
         );
         if ($group === 'status' && isset($statusPresentations[$statusSlot])) {
-            if ($deviceType === 'refrigerator' && $statusSlot === 'door') {
-                if (preg_match('/(?:freezer|cong[eé]lateur)/u', $identity)) {
+            if ($deviceType === 'refrigerator' && in_array($statusSlot, array('door', 'temperature'), true)) {
+                $isFreezer = preg_match('/(?:freezer|cong[eé]lateur)/u', $identity);
+                $isFridge = preg_match('/(?:fridge|cooler|r[eé]frig[eé]rateur)/u', $identity);
+                if ($statusSlot === 'door' && $isFreezer) {
                     return array('label' => __('Porte congélateur', __FILE__), 'icon' => 'fas fa-door-open', 'asset' => '');
                 }
-                if (preg_match('/(?:fridge|cooler|r[eé]frig[eé]rateur)/u', $identity)) {
+                if ($statusSlot === 'door' && $isFridge) {
                     return array('label' => __('Porte réfrigérateur', __FILE__), 'icon' => 'fas fa-door-open', 'asset' => '');
+                }
+                if ($statusSlot === 'temperature' && $isFreezer) {
+                    return array('label' => __('Température congélateur', __FILE__), 'icon' => 'fas fa-thermometer-half', 'asset' => '');
+                }
+                if ($statusSlot === 'temperature' && $isFridge) {
+                    return array('label' => __('Température réfrigérateur', __FILE__), 'icon' => 'fas fa-thermometer-half', 'asset' => '');
                 }
             }
             return $statusPresentations[$statusSlot];
@@ -701,14 +709,23 @@ class LocalThingsWidget
     public static function statusDeduplicationKey($deviceType, $entityKey, $name = '')
     {
         $slot = self::statusSlot($entityKey, $name);
-        if (self::profile($deviceType)['type'] !== 'refrigerator' || $slot !== 'door') {
+        if (
+            self::profile($deviceType)['type'] !== 'refrigerator'
+            || !in_array($slot, array('door', 'temperature'), true)
+        ) {
             return $slot;
         }
         $identity = trim((string) $entityKey);
         if ($identity === '') {
             $identity = trim((string) $name);
         }
-        return 'door:' . strtolower($identity);
+        return $slot . ':' . strtolower($identity);
+    }
+
+    /** Nombre maximal d'états principaux selon le profil d'appareil. */
+    public static function statusLimit($deviceType)
+    {
+        return self::profile($deviceType)['type'] === 'refrigerator' ? 4 : 3;
     }
 
     /**

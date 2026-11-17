@@ -267,6 +267,10 @@ class LocalThingsDeviceClient
                 (new LocalThingsOwnerPsk($this->certificateStore->dataDirectory()))->saveVerified($host, $credential);
                 $this->log('info', '[OwnerPSK] Identités et lecture métier vérifiées ; clé enregistrée localement');
                 return array('verified' => true, 'port' => $port, 'message' => 'Clé vérifiée et enregistrée. Vous pouvez utiliser Ajouter par IP.');
+            } catch (Throwable $error) {
+                $this->log('warning', '[OwnerPSK] Échec hôte=' . $host . ' port=' . $port
+                    . ' : ' . $error->getMessage());
+                throw $error;
             } finally { $session->close(); }
         });
     }
@@ -488,20 +492,20 @@ class LocalThingsDeviceClient
                 $wirePath,
                 $write['body']
             );
-            if ($verification['matched'] === false) {
+            if ($verification['matched'] !== true) {
                 throw new LocalThingsCommandRejectedException(sprintf(
-                    __('Commande acquittée mais non appliquée par l’appareil sur %s', __FILE__),
+                    $verification['matched'] === false
+                        ? __('Commande acquittée mais non appliquée par l’appareil sur %s', __FILE__)
+                        : __('Commande acquittée mais impossible à vérifier sur %s', __FILE__),
                     $href
                 ));
             }
 
-            $representation = $verification['representation'];
-            if (!is_array($representation)) {
-                $representation = is_array($responseRepresentation)
-                    ? $responseRepresentation
-                    : array_merge((array) ($resources[$href] ?? array()), $write['body']);
-            }
-            $resources[$href] = array_merge((array) ($resources[$href] ?? array()), $representation);
+            // A program change can update several resources at once (temperature,
+            // rinses, drying, remaining time). Refresh the complete snapshot now.
+            $resources = $subdeviceUuid === ''
+                ? $this->readResources($session)
+                : $this->readResources($session, array($subdeviceUuid, 'device', '0'));
             $mapped = $this->mapper->map($resources);
             $keepAlive = true;
             return array(
@@ -516,6 +520,11 @@ class LocalThingsDeviceClient
             // Un refus métier n'invalide pas la session DTLS établie.
             $keepAlive = $session->isConnected();
             throw $exception;
+        } catch (InvalidArgumentException $exception) {
+            // Une valeur rejetée avant émission ne doit ni fermer une session
+            // valide ni faire passer l'équipement hors ligne.
+            $keepAlive = $session->isConnected();
+            throw new LocalThingsCommandRejectedException($exception->getMessage(), 0, $exception);
         } catch (Throwable $exception) {
             $this->dropCachedSession($sessionKey);
             throw $exception;
@@ -546,7 +555,7 @@ class LocalThingsDeviceClient
                 $this->formatDelaySeconds(self::WRITE_SETTLE_DELAY_US)
             )
         );
-        usleep(self::WRITE_SETTLE_DELAY_US);
+        LocalThingsOperationDeadline::sleepMicros(self::WRITE_SETTLE_DELAY_US);
 
         try {
             list($code, $payload) = $session->get($path, 10.0);
@@ -572,11 +581,11 @@ class LocalThingsDeviceClient
             $this->log(
                 $matched ? 'info' : 'warning',
                 sprintf(
-                    __('[Command] Vérification /%1$s expected=%2$s actual=%3$s applied=%4$s', __FILE__),
+                    __('[Command] Vérification /%1$s applied=%2$s expected=%3$s actual=%4$s', __FILE__),
                     implode('/', $path),
+                    $matched ? 'yes' : 'no',
                     $this->jsonForLog($expected),
-                    $this->jsonForLog($representation),
-                    $matched ? 'yes' : 'no'
+                    $this->jsonForLog($representation)
                 )
             );
             if ($matched) {
@@ -716,8 +725,11 @@ class LocalThingsDeviceClient
      */
     private function jsonForLog($value)
     {
-        $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        return is_string($json) ? $json : '[unserializable]';
+        $json = json_encode($value, JSON_UNESCAPED_SLASHES);
+        if (!is_string($json)) {
+            return '[unserializable]';
+        }
+        return strlen($json) > 480 ? substr($json, 0, 477) . '...' : $json;
     }
 
     /**

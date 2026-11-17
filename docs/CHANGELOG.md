@@ -1,6 +1,15 @@
 # Changelog
 ## Non publié
 
+## Version 0.8.6 (17/11/2026)
+
+- La vérification OwnerPSK utilise désormais un port source déterministe réellement initialisé et fournit un code de diagnostic non sensible dans l’interface et les journaux en cas d’échec de session.
+- Le widget des réfrigérateurs peut afficher simultanément les températures et les portes des compartiments réfrigérateur et congélateur, avec des libellés distincts.
+- Les commandes refusent les valeurs absentes des listes annoncées par l’appareil, conservent leur identifiant lors d’un relevé partiel et stabilisent le type des informations liées à une liste. La fin différée est bornée et utilise le format `HH:MM:SS`.
+- Après une commande, le plugin relit l’état complet de l’appareil, refuse un succès impossible à vérifier et conserve la session lors d’une erreur de valeur. Les échecs de transport utilisent la même cadence de reconnexion que les rafraîchissements.
+- Les personnalisations de nom, d’unité et de bornes ne sont plus écrasées à chaque relevé. Le widget reste réactif après un nouveau rendu, atténue les durées inactives et conserve les états secondaires dans la page d’informations.
+- Le démon ignore les requêtes IPC déjà expirées, respecte le mode de démarrage automatique et est redémarré après une mise à jour pour charger le nouveau code.
+
 ## Version 0.8.5 (16/11/2026)
 
 - Les credentials OwnerPSK dont l’UUID propriétaire binaire contient un octet nul sont maintenant importables et utilisables. Le transport OpenSSL limité aux identités terminées par zéro est remplacé sur ce chemin par un moteur DTLS à longueur explicite, sans exposer les clés dans les arguments ni les journaux.

@@ -25,7 +25,7 @@ require_once __DIR__ . '/LocalThingsOwnerPskImporter.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.8.5';
+    public static $_pluginVersion = '0.8.6';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -864,6 +864,7 @@ class localthings extends eqLogic
     {
         $nameRegistry = self::commandNameRegistry($eqLogic);
         $processedEntityKeys = array();
+        $actionBearingEntityKeys = array();
         $desiredActionLogicalIds = array();
         foreach ($entities as $entity) {
             if (!is_array($entity) || empty($entity['key'])) {
@@ -871,6 +872,9 @@ class localthings extends eqLogic
             }
             $entityKey = (string) $entity['key'];
             $processedEntityKeys[$entityKey] = true;
+            if (!empty($entity['actions'])) {
+                $actionBearingEntityKeys[$entityKey] = true;
+            }
             $logicalId = self::commandLogicalId('info', $entityKey);
             $info = $eqLogic->getCmd('info', $logicalId);
             if (!is_object($info)) {
@@ -882,18 +886,31 @@ class localthings extends eqLogic
                 $info->setIsHistorized(0);
             }
             self::releaseCommandName($nameRegistry, $info);
+            $generatedInfoName = (string) ($entity['name'] ?? $entityKey);
+            $preferredInfoName = self::preserveGeneratedValue(
+                (string) $info->getName(),
+                $generatedInfoName,
+                (string) $info->getConfiguration('generatedName', '')
+            );
             $infoName = self::reserveCommandName(
                 $nameRegistry,
-                (string) ($entity['name'] ?? $entityKey),
+                $preferredInfoName,
                 $logicalId
             );
             $info->setName($infoName);
+            $info->setConfiguration('generatedName', $generatedInfoName);
             $subtype = (string) ($entity['subtype'] ?? 'string');
             if (!in_array($subtype, array('binary', 'numeric', 'string'), true)) {
                 $subtype = 'string';
             }
             $info->setSubType($subtype);
-            $info->setUnite((string) ($entity['unit'] ?? ''));
+            $generatedUnit = (string) ($entity['unit'] ?? '');
+            $info->setUnite(self::preserveGeneratedValue(
+                (string) $info->getUnite(),
+                $generatedUnit,
+                (string) $info->getConfiguration('generatedUnit', '')
+            ));
+            $info->setConfiguration('generatedUnit', $generatedUnit);
             $info->setConfiguration('managedByLocalThings', 1);
             $info->setConfiguration('entityKey', $entityKey);
             $info->setConfiguration('platform', (string) ($entity['platform'] ?? ''));
@@ -930,16 +947,23 @@ class localthings extends eqLogic
                 if (!in_array($actionSubtype, array('other', 'slider', 'select', 'message', 'color'), true)) {
                     $actionSubtype = 'other';
                 }
-                $command->setName(
-                    self::reserveCommandName(
-                        $nameRegistry,
-                        self::generatedActionName($entityKey, $infoName, $action, $actionSubtype),
-                        $actionLogicalId
-                    )
+                $generatedActionName = self::generatedActionName($entityKey, $infoName, $action, $actionSubtype);
+                $preferredActionName = self::preserveGeneratedValue(
+                    (string) $command->getName(),
+                    $generatedActionName,
+                    (string) $command->getConfiguration('generatedName', '')
                 );
+                $command->setName(self::reserveCommandName($nameRegistry, $preferredActionName, $actionLogicalId));
+                $command->setConfiguration('generatedName', $generatedActionName);
                 $command->setSubType($actionSubtype);
                 $command->setValue($info->getId());
-                $command->setUnite((string) ($action['unit'] ?? ''));
+                $generatedActionUnit = (string) ($action['unit'] ?? '');
+                $command->setUnite(self::preserveGeneratedValue(
+                    (string) $command->getUnite(),
+                    $generatedActionUnit,
+                    (string) $command->getConfiguration('generatedUnit', '')
+                ));
+                $command->setConfiguration('generatedUnit', $generatedActionUnit);
                 $command->setConfiguration('managedByLocalThings', 1);
                 $command->setConfiguration('entityKey', (string) ($action['target'] ?? $entityKey));
                 $command->setConfiguration('operation', (string) ($action['operation'] ?? 'write'));
@@ -985,9 +1009,18 @@ class localthings extends eqLogic
                     $command->setConfiguration('generatedListValue', '');
                 }
                 if ($actionSubtype === 'slider') {
-                    $command->setConfiguration('minValue', isset($action['min']) && is_numeric($action['min']) ? $action['min'] : '');
-                    $command->setConfiguration('maxValue', isset($action['max']) && is_numeric($action['max']) ? $action['max'] : '');
-                    $command->setConfiguration('step', isset($action['step']) && is_numeric($action['step']) ? $action['step'] : '');
+                    foreach (array('minValue' => 'min', 'maxValue' => 'max', 'step' => 'step') as $configuration => $source) {
+                        $generatedValue = isset($action[$source]) && is_numeric($action[$source])
+                            ? (string) $action[$source]
+                            : '';
+                        $generatedKey = 'generated' . ucfirst($configuration);
+                        $command->setConfiguration($configuration, self::preserveGeneratedValue(
+                            (string) $command->getConfiguration($configuration, ''),
+                            $generatedValue,
+                            (string) $command->getConfiguration($generatedKey, '')
+                        ));
+                        $command->setConfiguration($generatedKey, $generatedValue);
+                    }
                 } else {
                     $command->setConfiguration('minValue', '');
                     $command->setConfiguration('maxValue', '');
@@ -1014,10 +1047,13 @@ class localthings extends eqLogic
                 continue;
             }
             $entityKey = (string) $command->getConfiguration('entityKey', '');
-            if (
-                isset($processedEntityKeys[$entityKey])
-                && !isset($desiredActionLogicalIds[(string) $command->getLogicalId()])
-            ) {
+            if (self::shouldRemoveManagedAction(
+                $entityKey,
+                (string) $command->getLogicalId(),
+                $processedEntityKeys,
+                $actionBearingEntityKeys,
+                $desiredActionLogicalIds
+            )) {
                 $command->remove();
             }
         }
@@ -1027,6 +1063,28 @@ class localthings extends eqLogic
         // Some firmwares return temporary {"href": ...} stubs in /device/0.
         // Keep previously discovered commands so one partial poll cannot
         // erase a working equipment schema.
+    }
+
+    private static function preserveGeneratedValue($current, $generated, $previousGenerated)
+    {
+        $current = (string) $current;
+        $previousGenerated = (string) $previousGenerated;
+        if ($current === '' || ($previousGenerated !== '' && $current === $previousGenerated)) {
+            return (string) $generated;
+        }
+        return $current;
+    }
+
+    private static function shouldRemoveManagedAction(
+        $entityKey,
+        $logicalId,
+        $processedEntityKeys,
+        $actionBearingEntityKeys,
+        $desiredActionLogicalIds
+    ) {
+        return isset($processedEntityKeys[$entityKey])
+            && isset($actionBearingEntityKeys[$entityKey])
+            && !isset($desiredActionLogicalIds[$logicalId]);
     }
 
     /**
@@ -1374,6 +1432,9 @@ class localthings extends eqLogic
 
     public static function cron()
     {
+        if ((int) config::byKey('deamonAutoMode', __CLASS__, 1) !== 1) {
+            return;
+        }
         if ((self::deamon_info()['state'] ?? 'nok') !== 'ok') {
             self::deamon_start();
         }
@@ -1588,18 +1649,23 @@ class localthings extends eqLogic
                 'reason' => 'manual',
             ), 45000);
         } catch (Throwable $exception) {
-            $this->checkAndUpdateCmd('connected', 0);
-            $this->setConfiguration('last_error', $exception->getMessage());
-            $this->setConfiguration('last_refresh', time());
-            $this->setConfiguration(
-                'offline_retry_failures',
-                LocalThingsOfflineBackoff::nextFailureCount(
-                    (int) $this->getConfiguration('offline_retry_failures', 0)
-                )
-            );
-            $this->save(true);
+            $this->recordCommunicationFailure($exception->getMessage());
             throw $exception;
         }
+    }
+
+    public function recordCommunicationFailure($message)
+    {
+        $this->checkAndUpdateCmd('connected', 0);
+        $this->setConfiguration('last_error', (string) $message);
+        $this->setConfiguration('last_refresh', time());
+        $this->setConfiguration(
+            'offline_retry_failures',
+            LocalThingsOfflineBackoff::nextFailureCount(
+                (int) $this->getConfiguration('offline_retry_failures', 0)
+            )
+        );
+        $this->save(true);
     }
 
     public function refreshDirect()
@@ -1826,9 +1892,15 @@ class localthings extends eqLogic
                 $command->getConfiguration('entityKey', ''),
                 $command->getName()
             );
-            if ($slot !== '' && count($sections['status']) < 3 && !isset($statusSlots[$slot])) {
+            if (
+                $slot !== ''
+                && count($sections['status']) < LocalThingsWidget::statusLimit($profile['type'])
+                && !isset($statusSlots[$slot])
+            ) {
                 $sections['status'][] = $command;
                 $statusSlots[$slot] = true;
+            } else {
+                $sections['details'][] = $command;
             }
         }
 
@@ -2238,10 +2310,11 @@ class localthingsCmd extends cmd
         } catch (Throwable $exception) {
             if (!($exception instanceof LocalThingsDaemonRemoteException)
                 || $exception->remoteCode() !== 'COMMAND_REJECTED') {
-                $eqLogic->checkAndUpdateCmd('connected', 0);
+                $eqLogic->recordCommunicationFailure($exception->getMessage());
+            } else {
+                $eqLogic->setConfiguration('last_error', $exception->getMessage());
+                $eqLogic->save(true);
             }
-            $eqLogic->setConfiguration('last_error', $exception->getMessage());
-            $eqLogic->save(true);
             throw $exception;
         }
     }
@@ -2302,10 +2375,11 @@ class localthingsCmd extends cmd
             return $result;
         } catch (Exception $exception) {
             if (!($exception instanceof LocalThingsCommandRejectedException)) {
-                $eqLogic->checkAndUpdateCmd('connected', 0);
+                $eqLogic->recordCommunicationFailure($exception->getMessage());
+            } else {
+                $eqLogic->setConfiguration('last_error', $exception->getMessage());
+                $eqLogic->save(true);
             }
-            $eqLogic->setConfiguration('last_error', $exception->getMessage());
-            $eqLogic->save(true);
             throw $exception;
         }
     }

@@ -88,18 +88,22 @@ class LocalThingsDaemonClient
             ? (int) round($this->timeout * 1000)
             : max(100, min(120000, (int) $deadlineMs));
         $id = bin2hex(random_bytes(16));
+        $nowMs = (int) floor(microtime(true) * 1000);
         $frame = json_encode(array(
             'v' => 1,
             'id' => $id,
             'op' => $operation,
             'deadline_ms' => $deadlineMs,
+            'expires_at_ms' => $nowMs + $deadlineMs,
             'payload' => $payload,
         ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if (!is_string($frame) || strlen($frame) + 1 > self::MAX_FRAME_BYTES) {
             throw new InvalidArgumentException('Requête IPC LocalThings trop volumineuse');
         }
 
-        $timeout = max(0.1, $deadlineMs / 1000);
+        // Laisse au démon une courte marge pour sérialiser son erreur
+        // DEADLINE_EXCEEDED après l'interruption coopérative du traitement.
+        $timeout = max(0.1, ($deadlineMs / 1000) + 0.25);
         $errno = 0;
         $error = '';
         $socket = @stream_socket_client(

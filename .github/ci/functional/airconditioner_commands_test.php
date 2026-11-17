@@ -49,6 +49,27 @@ try {
         'Removed generated values must be pruned while custom values remain'
     );
 
+    $preserveValue = new ReflectionMethod('localthings', 'preserveGeneratedValue');
+    assertAcCommand(
+        $preserveValue->invoke(null, 'Mon libellé', 'Nouveau libellé', 'Ancien libellé') === 'Mon libellé',
+        'User-customized command metadata must survive synchronization'
+    );
+    assertAcCommand(
+        $preserveValue->invoke(null, 'Ancien libellé', 'Nouveau libellé', 'Ancien libellé') === 'Nouveau libellé',
+        'Untouched generated command metadata must follow mapper updates'
+    );
+    $shouldRemove = new ReflectionMethod('localthings', 'shouldRemoveManagedAction');
+    assertAcCommand(
+        $shouldRemove->invoke(null, 'washer_cycle_x', 'action_x',
+            array('washer_cycle_x' => true), array(), array()) === false,
+        'A partial poll without announced actions must preserve existing action IDs'
+    );
+    assertAcCommand(
+        $shouldRemove->invoke(null, 'washer_cycle_x', 'action_x',
+            array('washer_cycle_x' => true), array('washer_cycle_x' => true), array()) === true,
+        'A complete action-bearing entity may remove an action no longer announced'
+    );
+
     $resources = array(
         '/mode/convenient/vs/0' => array(
             'x.com.samsung.da.modes' => 'Off',

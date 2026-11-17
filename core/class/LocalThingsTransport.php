@@ -1155,6 +1155,7 @@ class LocalThingsDtlsClient
             '-brief',
             '-state',
             '-quiet',
+            '-no_ign_eof',
         );
         if ($this->serverAuthReadOnly) {
             // Profil de lecture expérimentale Samsung : vérification serveur

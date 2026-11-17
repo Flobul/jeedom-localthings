@@ -215,13 +215,17 @@ class LocalThingsMapper
                     $action['target'] = $key;
                 }
                 unset($action);
+                $subtype = $this->subtype($href, $field, $rawValue, $actions);
+                $unit = $subtype === 'string' && $this->hasActionSubtype($actions, 'select')
+                    ? ''
+                    : $this->unit($href, $field, $representation, $rawValue);
                 $entity = array(
                     'key' => $key,
                     'name' => $this->humanName($href, $field),
                     'platform' => $this->platform($href, $field, $rawValue, $actions),
                     'type' => 'info',
-                    'subtype' => $this->subtype($href, $field, $rawValue, $actions),
-                    'unit' => $this->unit($href, $field, $representation, $rawValue),
+                    'subtype' => $subtype,
+                    'unit' => $unit,
                     'category' => $this->category($href, $field),
                     'value' => $value,
                     'options' => $this->optionsFor($field, $rawValue, $representation),
@@ -411,6 +415,14 @@ class LocalThingsMapper
         $field = (string) ($recipe['field'] ?? '');
         $encoding = (string) ($recipe['encoding'] ?? 'same');
         $representation = $resources[$href] ?? array();
+        if (isset($recipe['allowed'])) {
+            $allowed = is_array($recipe['allowed'])
+                ? array_map('strval', $recipe['allowed'])
+                : array();
+            if (!is_scalar($value) || !in_array((string) $value, $allowed, true)) {
+                throw new InvalidArgumentException(__('Valeur absente de la liste autorisée', __FILE__));
+            }
+        }
 
         switch ($encoding) {
             case 'bool':
@@ -498,8 +510,14 @@ class LocalThingsMapper
                 if (!is_numeric($value)) {
                     throw new InvalidArgumentException(__('Durée invalide', __FILE__));
                 }
-                $minutes = (int) round(max(0, (float) $value) * 60);
-                $bodyValue = sprintf('%d:%02d:00', intdiv($minutes, 60), $minutes % 60);
+                $numericValue = (float) $value;
+                $minimum = isset($recipe['min']) && is_numeric($recipe['min']) ? (float) $recipe['min'] : 0.0;
+                $maximum = isset($recipe['max']) && is_numeric($recipe['max']) ? (float) $recipe['max'] : 24.0;
+                if ($numericValue < $minimum || $numericValue > $maximum) {
+                    throw new InvalidArgumentException(__('Durée hors limites', __FILE__));
+                }
+                $minutes = (int) round($numericValue * 60);
+                $bodyValue = sprintf('%02d:%02d:00', intdiv($minutes, 60), $minutes % 60);
                 if (array_key_exists('x.com.samsung.da.delayEndTime', $representation)) {
                     $field = 'x.com.samsung.da.delayEndTime';
                 }
@@ -753,6 +771,8 @@ class LocalThingsMapper
                 'href' => $href,
                 'field' => $delayField,
                 'encoding' => 'delay_hours',
+                'min' => 0,
+                'max' => 24,
             );
             $action = $this->valueAction('set', __('Régler', __FILE__), 'slider', $recipe);
             $action['min'] = 0;
@@ -1283,6 +1303,9 @@ class LocalThingsMapper
      */
     private function valueAction($key, $name, $subtype, $recipe, $options = array())
     {
+        if ($subtype === 'select' && count($options) > 0) {
+            $recipe['allowed'] = array_values(array_map('strval', array_column($options, 'value')));
+        }
         return array(
             'key' => $key,
             'name' => $name,
@@ -2206,6 +2229,9 @@ class LocalThingsMapper
             return 'binary';
         }
         foreach ($actions as $action) {
+            if (($action['subtype'] ?? '') === 'select') {
+                return 'string';
+            }
             if (
                 ($action['key'] ?? '') === 'on'
                 || ($action['key'] ?? '') === 'off'
@@ -2214,6 +2240,14 @@ class LocalThingsMapper
             }
         }
         return is_numeric($value) ? 'numeric' : 'string';
+    }
+
+    private function hasActionSubtype($actions, $subtype)
+    {
+        foreach ((array) $actions as $action) {
+            if (($action['subtype'] ?? '') === $subtype) { return true; }
+        }
+        return false;
     }
 
     /**

@@ -181,6 +181,7 @@
         var stateId = output.getAttribute('data-state-cmd_id');
         if (stateId && stateId !== '0') {
             jeedom.cmd.addUpdateFunction(stateId, function (options) {
+                '#uid#';
                 show(typeof options.value !== 'undefined' ? options.value : options.display_value);
             });
         }
@@ -190,6 +191,7 @@
         if (!stateId || toggle.getAttribute('data-update-bound') === '1') return;
         toggle.setAttribute('data-update-bound', '1');
         jeedom.cmd.addUpdateFunction(stateId, function (_options) {
+            '#uid#';
             var value = typeof _options.value !== 'undefined' ? _options.value : _options.display_value;
             var online = ['1', 'true', 'on', 'enable', 'enabled', 'yes'].indexOf(String(value).trim().toLowerCase()) !== -1;
             setToggleState(toggle, online);
@@ -209,6 +211,7 @@
         };
         syncProgress(progress.getAttribute('data-value'));
         jeedom.cmd.addUpdateFunction(progress.getAttribute('data-cmd_id'), function (_options) {
+            '#uid#';
             syncProgress(typeof _options.value !== 'undefined' ? _options.value : _options.display_value);
         });
     });
@@ -245,10 +248,14 @@
         }
         if (remaining) {
             remaining.classList.toggle('localthings-status-active', operating);
+            remaining.classList.toggle('localthings-status-inactive', !operating);
             var hourglass = remaining.querySelector('.localthings-widget-command-icon i');
             if (hourglass) hourglass.classList.toggle('fa-spin', operating);
         }
-        if (progress) progress.classList.toggle('localthings-status-active', operating);
+        if (progress) {
+            progress.classList.toggle('localthings-status-active', operating);
+            progress.classList.toggle('localthings-status-inactive', !operating);
+        }
     };
     syncOperatingStatus();
     if (statusContainer) {
@@ -256,6 +263,7 @@
             if (frame.getAttribute('data-status-bound') === '1') return;
             frame.setAttribute('data-status-bound', '1');
             jeedom.cmd.addUpdateFunction(frame.getAttribute('data-cmd_id'), function (_options) {
+                '#uid#';
                 var value = typeof _options.value !== 'undefined' ? _options.value : _options.display_value;
                 frame.setAttribute('data-status-value', value == null ? '' : value);
                 syncOperatingStatus();
@@ -265,6 +273,7 @@
     var health = widget.querySelector('.health[data-cmd_id="#health_id#"]');
     if (health && '#health_id#' !== '') {
         jeedom.cmd.addUpdateFunction('#health_id#', function (_options) {
+            '#uid#';
             var value = typeof _options.value !== 'undefined' ? _options.value : _options.display_value;
             var online = Number(value) === 1;
             var icon = health.querySelector('i');

@@ -853,6 +853,56 @@ class LocalThingsCoap
     }
 }
 
+class LocalThingsOperationDeadlineExceeded extends RuntimeException
+{
+    public function remoteCode() { return 'DEADLINE_EXCEEDED'; }
+    public function retryable() { return true; }
+    public function phase() { return 'ipc'; }
+}
+
+/** Échéance coopérative de la requête IPC traitée par le démon. */
+class LocalThingsOperationDeadline
+{
+    private static $expiresAt = 0.0;
+
+    public static function setEpochMilliseconds($expiresAtMs)
+    {
+        self::$expiresAt = max(0.0, ((float) $expiresAtMs) / 1000.0);
+    }
+
+    public static function clear()
+    {
+        self::$expiresAt = 0.0;
+    }
+
+    public static function checkpoint()
+    {
+        if (self::$expiresAt > 0.0 && microtime(true) >= self::$expiresAt) {
+            throw new LocalThingsOperationDeadlineExceeded('Délai de la requête IPC dépassé');
+        }
+    }
+
+    public static function timeout($requestedSeconds)
+    {
+        self::checkpoint();
+        $requestedSeconds = max(0.01, (float) $requestedSeconds);
+        if (self::$expiresAt <= 0.0) { return $requestedSeconds; }
+        return max(0.01, min($requestedSeconds, self::$expiresAt - microtime(true)));
+    }
+
+    public static function sleepMicros($microseconds)
+    {
+        $remaining = max(0, (int) $microseconds);
+        while ($remaining > 0) {
+            self::checkpoint();
+            $chunk = min($remaining, 100000);
+            usleep($chunk);
+            $remaining -= $chunk;
+        }
+        self::checkpoint();
+    }
+}
+
 /**
  * Gère une session CoAP corrélée au-dessus d'un transport DTLS LocalThings.
  */
@@ -909,7 +959,7 @@ class LocalThingsSession
      */
     public function connect($timeout = 12.0)
     {
-        $this->transport->connect($timeout);
+        $this->transport->connect(LocalThingsOperationDeadline::timeout($timeout));
     }
 
     /**
@@ -922,6 +972,7 @@ class LocalThingsSession
      */
     public function get($pathSegments, $timeout = 25.0, $query = array())
     {
+        $timeout = LocalThingsOperationDeadline::timeout($timeout);
         $pathSegments = $this->normalizePath($pathSegments);
         $pathLabel = '/' . implode('/', $pathSegments);
         $started = microtime(true);
@@ -1026,6 +1077,7 @@ class LocalThingsSession
      */
     public function post($pathSegments, $value, $timeout = 15.0)
     {
+        $timeout = LocalThingsOperationDeadline::timeout($timeout);
         $pathSegments = $this->normalizePath($pathSegments);
         $pathLabel = '/' . implode('/', $pathSegments);
         $this->log('debug', sprintf(__('[CoAP] POST %s démarré', __FILE__), $pathLabel));

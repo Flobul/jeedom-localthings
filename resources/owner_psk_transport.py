@@ -8,11 +8,19 @@ import socket
 import sys
 import time
 
-from vendor.smartthings_local_dtls import (
-    DtlsPskClient,
-    WantRead,
-    ZeroReturn,
-)
+try:
+    from vendor.smartthings_local_dtls import (
+        DtlsPskClient,
+        WantRead,
+        ZeroReturn,
+    )
+except Exception:
+    print(json.dumps({
+        'ok': False,
+        'error': 'Transport OwnerPSK indisponible',
+        'code': 'ownerpsk_dependency_missing',
+    }), flush=True)
+    raise SystemExit(1)
 
 MTU = 1200
 MAX_FRAME_BYTES = 65535
@@ -140,6 +148,7 @@ def check_transport():
 
 def main():
     transport = None
+    action = ''
     try:
         while True:
             line = sys.stdin.buffer.readline(200000)
@@ -178,9 +187,15 @@ def main():
             else:
                 raise ValueError('invalid action')
             print(json.dumps({'ok': True, 'result': result}), flush=True)
-    except Exception:
+    except Exception as error:
         # Protocol, JSON and credential errors must never expose their values.
-        print(json.dumps({'ok': False, 'error': 'Session OwnerPSK impossible ou interrompue'}), flush=True)
+        safe_action = action if action in ('connect', 'write', 'read', 'close') else 'request'
+        suffix = '_timeout' if isinstance(error, TimeoutError) else '_failed'
+        print(json.dumps({
+            'ok': False,
+            'error': 'Session OwnerPSK impossible ou interrompue',
+            'code': 'ownerpsk_' + safe_action + suffix,
+        }), flush=True)
     finally:
         if transport:
             transport.close()

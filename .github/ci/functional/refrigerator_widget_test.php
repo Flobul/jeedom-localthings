@@ -83,12 +83,20 @@ assertRefrigeratorWidget(
 
 $temperatures = $mapper->map(array(
     '/temperatures/vs/0' => array(
-        'x.com.samsung.da.items' => array(array(
-            'x.com.samsung.da.id' => 'Fridge',
-            'x.com.samsung.da.description' => 'Fridge',
-            'x.com.samsung.da.current' => 5,
-            'x.com.samsung.da.unit' => 'Celsius',
-        )),
+        'x.com.samsung.da.items' => array(
+            array(
+                'x.com.samsung.da.id' => 'Fridge',
+                'x.com.samsung.da.description' => 'Fridge',
+                'x.com.samsung.da.current' => 5,
+                'x.com.samsung.da.unit' => 'Celsius',
+            ),
+            array(
+                'x.com.samsung.da.id' => 'Freezer',
+                'x.com.samsung.da.description' => 'Freezer',
+                'x.com.samsung.da.current' => -18,
+                'x.com.samsung.da.unit' => 'Celsius',
+            ),
+        ),
     ),
 ));
 $currentTemperature = current(array_filter($temperatures['entities'], function ($entity) {
@@ -98,6 +106,35 @@ assertRefrigeratorWidget(is_array($currentTemperature), 'Mapped refrigerator tem
 assertRefrigeratorWidget(
     LocalThingsWidget::statusSlot($currentTemperature['key'], 'Renamed by user') === 'temperature',
     'Stable temperature item keys must remain widget statuses after a rename'
+);
+$fridgeTemperature = current(array_filter($temperatures['entities'], function ($entity) {
+    return strpos((string) ($entity['key'] ?? ''), 'temperatureItem_Fridge_current') !== false;
+}));
+$freezerTemperature = current(array_filter($temperatures['entities'], function ($entity) {
+    return strpos((string) ($entity['key'] ?? ''), 'temperatureItem_Freezer_current') !== false;
+}));
+assertRefrigeratorWidget(
+    LocalThingsWidget::statusDeduplicationKey('refrigerator', $fridgeTemperature['key'], $fridgeTemperature['name'])
+        !== LocalThingsWidget::statusDeduplicationKey('refrigerator', $freezerTemperature['key'], $freezerTemperature['name']),
+    'Fridge and freezer temperatures must both remain on the refrigerator widget'
+);
+assertRefrigeratorWidget(
+    LocalThingsWidget::statusLimit('refrigerator') === 4,
+    'The refrigerator widget must have room for two doors and two temperatures'
+);
+$fridgeTemperaturePresentation = LocalThingsWidget::presentation(
+    'refrigerator', $fridgeTemperature['key'], 'info', 'status', $fridgeTemperature['name']
+);
+$freezerTemperaturePresentation = LocalThingsWidget::presentation(
+    'refrigerator', $freezerTemperature['key'], 'info', 'status', $freezerTemperature['name']
+);
+assertRefrigeratorWidget(
+    $fridgeTemperaturePresentation['label'] === 'Température réfrigérateur',
+    'Fridge temperature label missing'
+);
+assertRefrigeratorWidget(
+    $freezerTemperaturePresentation['label'] === 'Température congélateur',
+    'Freezer temperature label missing'
 );
 
 fwrite(STDOUT, "LocalThings refrigerator multi-door widget: OK\n");

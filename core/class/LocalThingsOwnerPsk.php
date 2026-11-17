@@ -117,6 +117,11 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
             throw new InvalidArgumentException(__('Endpoint OwnerPSK invalide', __FILE__));
         }
         $this->host = $host; $this->port = (int) $port;
+        $address = ip2long($host);
+        if ($address === false) {
+            throw new InvalidArgumentException(__('Adresse OwnerPSK invalide', __FILE__));
+        }
+        $this->localPort = 40000 + (($address & 0xffff) % 20000);
         $this->credential = call_user_func(array('LocalThingsOwnerPsk', 'validate'), $credential);
     }
 
@@ -156,17 +161,30 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         fflush($this->pipes[0]);
         $deadline = microtime(true) + max(.1, $timeout); $response = '';
         while (microtime(true) < $deadline) {
-            if (class_exists('LocalThingsDiscovery', false)) { LocalThingsDiscovery::checkpoint(); }
-            $response .= stream_get_contents($this->pipes[1]);
+            if (class_exists('LocalThingsDiscovery', false)) {
+                LocalThingsDiscovery::checkpoint();
+            }
+            $chunk = stream_get_contents($this->pipes[1]);
+            if ($chunk === false || $chunk === '') { break; }
+            if (function_exists('mb_strlen') && mb_strlen($response . $chunk, '8bit') > 40000) {
+                throw new RuntimeException(__('Réponse RPC OwnerPSK trop volumineuse', __FILE__) . ' [ownerpsk_rpc_invalid]');
+            }
             if (strpos($response, "\n") !== false) {
                 $decoded = json_decode($response, true);
-                if (!is_array($decoded) || empty($decoded['ok'])) { throw new RuntimeException(__('Session OwnerPSK impossible ou interrompue', __FILE__)); }
+                if (!is_array($decoded)) {
+                    throw new RuntimeException(__('Réponse RPC OwnerPSK invalide', __FILE__) . ' [ownerpsk_rpc_invalid]');
+                }
+                if (empty($decoded['ok'])) {
+                    $code = (string) ($decoded['code'] ?? '');
+                    $suffix = preg_match('/^ownerpsk_[a-z_]+$/D', $code) ? ' [' . $code . ']' : '';
+                    throw new RuntimeException(__('Session OwnerPSK impossible ou interrompue', __FILE__) . $suffix);
+                }
                 return $decoded['result'] ?? null;
             }
-            if (strlen($response) > 200000 || feof($this->pipes[1])) { break; }
             usleep(10000);
         }
-        throw new RuntimeException(__('Délai OwnerPSK dépassé ou transport indisponible', __FILE__));
+        throw new RuntimeException(__('Délai OwnerPSK dépassé ou transport indisponible', __FILE__)
+            . ' [ownerpsk_rpc_timeout]');
     }
 
     public function write($data) { $this->rpc(array('action' => 'write', 'data' => base64_encode($data)), 4.0); }
@@ -179,7 +197,7 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         return $frame;
     }
     public function errorSummary() { return 'Transport OwnerPSK'; }
-    public function localPort() { return (int) $this->sourcePort; }
+    public function localPort() { return (int) $this->localPort; }
     public function isConnected()
     {
         if (!is_resource($this->process)) { return false; }
