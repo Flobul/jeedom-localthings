@@ -66,13 +66,31 @@ class TranslationWorkflowSeparationTests(unittest.TestCase):
         self.assertIn('--core-source .ci/jeedom-core/core/i18n/fr_FR.json', workflow)
         self.assertIn("needs.plan.outputs.translation_ready == 'true'", workflow)
 
-    def test_release_workflow_never_auto_merges_translation_pr(self):
+    def test_validated_translation_pr_is_merged_without_manual_intervention(self):
         release = (WORKFLOWS / 'release.yml').read_text(encoding='utf-8')
         translation = (WORKFLOWS / 'translation.yml').read_text(encoding='utf-8')
-        combined = release + '\n' + translation
-        self.assertNotIn('gh pr merge', combined)
-        self.assertNotIn('merge-method:', combined)
-        self.assertNotIn('auto-merge', combined)
+        self.assertNotIn('gh pr merge', release)
+        self.assertIn('id: translation_pr', translation)
+        self.assertIn("steps.translation_pr.outputs.pull-request-number != ''", translation)
+        self.assertIn('GH_TOKEN: ${{ github.token }}', translation)
+        self.assertIn('actions: write', translation)
+        self.assertIn('Verify generation closes every pre-Release translation gap', translation)
+        self.assertIn('report.get("release_allowed") is not True', translation)
+        self.assertIn('set -euo pipefail', translation)
+        self.assertIn('gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch', translation)
+        self.assertIn('--match-head-commit "$PR_HEAD_SHA"', translation)
+        self.assertIn('--json state,headRefOid', translation)
+        self.assertIn('compare/$merge_sha...$default_sha', translation)
+        self.assertIn('gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"', translation)
+        validation = translation.index('validate_i18n.py')
+        complete_gate = translation.index('Verify generation closes every pre-Release translation gap')
+        pull_request = translation.index('peter-evans/create-pull-request@v8')
+        merge = translation.index('gh pr merge')
+        dispatch = translation.index('gh workflow run ci.yml')
+        self.assertLess(validation, complete_gate)
+        self.assertLess(complete_gate, pull_request)
+        self.assertLess(pull_request, merge)
+        self.assertLess(merge, dispatch)
 
     def test_release_dispatches_translation_only_from_explicit_gate_output(self):
         workflow = (WORKFLOWS / 'release.yml').read_text(encoding='utf-8')
