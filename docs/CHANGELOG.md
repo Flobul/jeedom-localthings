@@ -1,6 +1,13 @@
 # Changelog
 ## Non publié
 
+## Version 0.8.7 (18/11/2026)
+
+- Correction d’une régression de la vérification OwnerPSK qui quittait la lecture RPC avant la réponse différée du moteur DTLS et finissait systématiquement par `ownerpsk_rpc_timeout`.
+- Les réglages susceptibles d’être abandonnés par un lave-linge ou sèche-linge sont refusés avant envoi lorsqu’un cycle est actif ou en pause ; les commandes de démarrage, pause, arrêt et les contrôles booléens restent disponibles. Le widget grise ces réglages et affiche un avis explicite.
+- Après un refus, les listes et curseurs du widget reviennent immédiatement à la valeur courante de l’information liée.
+- Les anciennes unités générées `°C`, `°F`, `tr/min` et `rpm` sont retirées lors de la migration d’une information de réglage vers le type texte, sans modifier les unités personnalisées.
+
 ## Version 0.8.6 (17/11/2026)
 
 - La vérification OwnerPSK utilise désormais un port source déterministe réellement initialisé et fournit un code de diagnostic non sensible dans l’interface et les journaux en cas d’échec de session.

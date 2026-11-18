@@ -168,6 +168,29 @@
   text-transform: uppercase;
 }
 
+.localthings-widget-cycle-notice {
+  margin: 0 2px 8px;
+  padding: 6px 9px;
+  border: 1px solid rgba(230, 145, 30, .42);
+  border-radius: 7px;
+  background: rgba(230, 145, 30, .12);
+  color: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.localthings-widget-cycle-notice[hidden] {
+  display: none !important;
+}
+
+.localthings-widget-cycle-notice i {
+  margin-right: 6px;
+}
+
+.localthings-widget-settings.localthings-settings-locked .localthings-widget-command-grid {
+  opacity: .48;
+}
+
 .localthings-widget-command-grid {
   display: flex;
   align-items: stretch;

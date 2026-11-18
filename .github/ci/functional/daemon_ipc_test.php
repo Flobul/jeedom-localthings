@@ -26,6 +26,7 @@ if (($argv[1] ?? '') === '--serve') {
                 return array('payload' => $payload, 'pid' => getmypid());
             }
             if ($operation === 'sleep') {
+                file_put_contents($runtime . '/sleep-started', 'yes');
                 usleep(max(0, min(3000, (int) ($payload['milliseconds'] ?? 0))) * 1000);
                 return array('slept' => true);
             }
@@ -109,7 +110,11 @@ try {
         array('bypass_shell' => true)
     );
     check(is_resource($busyProcess), 'busy request process starts');
-    usleep(150000);
+    $busyDeadline = microtime(true) + 1.0;
+    while (!is_file($runtime . '/sleep-started') && microtime(true) < $busyDeadline) {
+        usleep(10000);
+    }
+    check(is_file($runtime . '/sleep-started'), 'busy request reaches the synchronous handler');
     $busyHealthFailed = false;
     try {
         (new LocalThingsDaemonClient($runtime, 0.2))->health();

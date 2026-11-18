@@ -29,6 +29,15 @@ checks = {
     and "localthings-status-inactive" in mobile_template
     and "localthings-status-inactive" in css
     and "content: '—'" in css,
+    "dashboard settings are locked during a cycle": "localthings-widget-cycle-notice" in dashboard_template
+    and "data-localthings-cycle-disabled" in dashboard_template
+    and "cycleGuardedDevice" in dashboard_template,
+    "mobile settings are locked during a cycle": "localthings-widget-cycle-notice" in mobile_template
+    and "data-localthings-cycle-disabled" in mobile_template
+    and "cycleGuardedDevice" in mobile_template,
+    "offline transition preserves cycle-disabled controls":
+    "!control.disabled || control.getAttribute('data-localthings-cycle-disabled') === '1'" in dashboard_template
+    and "!control.disabled || control.getAttribute('data-localthings-cycle-disabled') === '1'" in mobile_template,
 }
 
 missing = [name for name, present in checks.items() if not present]

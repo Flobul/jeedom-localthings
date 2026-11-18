@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+if (!function_exists('__')) {
+    function __($message, $file = null) { return $message; }
+}
+
 class LocalThingsDtlsClient
 {
 }
@@ -27,6 +31,33 @@ if ($second->localPort() !== $port) {
 }
 if ($other->localPort() === $port) {
     throw new RuntimeException('OwnerPSK source port should distinguish adjacent hosts');
+}
+
+$delayed = proc_open(
+    array(PHP_BINARY, '-r', 'usleep(120000); echo json_encode(array("ok" => true, "result" => "ready")) . "\\n";'),
+    array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w')),
+    $pipes,
+    null,
+    null,
+    array('bypass_shell' => true)
+);
+if (!is_resource($delayed)) {
+    throw new RuntimeException('Unable to start delayed OwnerPSK RPC fixture');
+}
+stream_set_blocking($pipes[1], false);
+$reflection = new ReflectionClass($first);
+$reflection->getProperty('process')->setValue($first, $delayed);
+$reflection->getProperty('pipes')->setValue($first, $pipes);
+$rpc = $reflection->getMethod('rpc');
+try {
+    if ($rpc->invoke($first, array('action' => 'connect'), 1.0) !== 'ready') {
+        throw new RuntimeException('Delayed OwnerPSK RPC response was not returned');
+    }
+} finally {
+    foreach ($pipes as $pipe) {
+        if (is_resource($pipe)) { fclose($pipe); }
+    }
+    proc_close($delayed);
 }
 
 $clientSource = file_get_contents(dirname(__DIR__, 3) . '/core/class/LocalThingsClient.php');

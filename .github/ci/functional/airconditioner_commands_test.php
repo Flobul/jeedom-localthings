@@ -4,7 +4,23 @@ if (!function_exists('__')) {
     function __($message, $file = null) { return $message; }
 }
 class eqLogic {}
-class cmd {}
+class cmd {
+    private $testSubtype = '';
+    private $testId = 0;
+    private $testValueCommand;
+    public function configureTestCommand($subtype, $id, $valueCommand) {
+        $this->testSubtype = $subtype;
+        $this->testId = $id;
+        $this->testValueCommand = $valueCommand;
+    }
+    public function getSubType() { return $this->testSubtype; }
+    public function getId() { return $this->testId; }
+    public function getCmdValue() { return $this->testValueCommand; }
+}
+class event {
+    public static $events = array();
+    public static function add($name, $payload) { self::$events[] = array($name, $payload); }
+}
 
 $repositoryRoot = dirname(__DIR__, 3);
 $sandbox = sys_get_temp_dir() . '/localthings-ac-commands-' . bin2hex(random_bytes(6));
@@ -68,6 +84,61 @@ try {
         $shouldRemove->invoke(null, 'washer_cycle_x', 'action_x',
             array('washer_cycle_x' => true), array('washer_cycle_x' => true), array()) === true,
         'A complete action-bearing entity may remove an action no longer announced'
+    );
+    $cycleGuard = new ReflectionMethod('localthingsCmd', 'isCycleSettingBlocked');
+    assertAcCommand($cycleGuard->invoke(null, 'washer', 'same', 'active') === true,
+        'Select-like settings must be blocked while a cycle is active');
+    assertAcCommand($cycleGuard->invoke(null, 'dryer', 'delay_hours', 'pause') === true,
+        'Settings must be blocked while a cycle is paused');
+    assertAcCommand($cycleGuard->invoke(null, 'washer', 'fixed', 'active') === false,
+        'Start, pause and stop fixed actions must remain available');
+    assertAcCommand($cycleGuard->invoke(null, 'washer', 'bool', 'pause') === false,
+        'Boolean safety controls must remain available');
+    assertAcCommand($cycleGuard->invoke(null, 'washer', 'same', 'ready') === false,
+        'Settings must remain available outside a cycle');
+    assertAcCommand($cycleGuard->invoke(null, 'dishwasher', 'same', 'active') === false,
+        'Cycle guards must not alter other appliance profiles');
+    $machineStateCommand = new class {
+        public function getConfiguration($key, $default = '') {
+            return $key === 'entityKey' ? 'operational_state_0_currentMachineState_abcd' : $default;
+        }
+        public function execCmd() { return 'Active'; }
+    };
+    $machine = new class($machineStateCommand) {
+        private $command;
+        public function __construct($command) { $this->command = $command; }
+        public function getCmd($type) { return $type === 'info' ? array($this->command) : array(); }
+    };
+    $currentState = new ReflectionMethod('localthingsCmd', 'currentMachineState');
+    assertAcCommand($currentState->invoke(null, $machine) === 'active',
+        'Cycle guard must read the stable currentMachineState entity rather than a visible name');
+
+    $preserveUnit = new ReflectionMethod('localthings', 'preserveGeneratedUnit');
+    assertAcCommand(
+        $preserveUnit->invoke(null, '°C', '', '', 'string', 'washer_temperature') === '',
+        'Legacy generated temperature units must be cleared when the info becomes text'
+    );
+    assertAcCommand(
+        $preserveUnit->invoke(null, 'mon unité', '', '', 'string', 'washer_temperature') === 'mon unité',
+        'Custom units must remain untouched during the text migration'
+    );
+
+    $linkedInfo = new class {
+        public function execCmd() { return 'None'; }
+        public function getUnite() { return ''; }
+    };
+    $actionCommand = new localthingsCmd();
+    $actionCommand->configureTestCommand('select', 321, $linkedInfo);
+    $restore = new ReflectionMethod('localthingsCmd', 'restoreCurrentActionValue');
+    $restore->invoke($actionCommand);
+    assertAcCommand(
+        event::$events === array(array('cmd::update', array(
+            'cmd_id' => 321,
+            'value' => 'None',
+            'display_value' => 'None',
+            'unit' => '',
+        ))),
+        'A rejected select must push its linked info value back to the action widget'
     );
 
     $resources = array(

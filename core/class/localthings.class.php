@@ -25,7 +25,7 @@ require_once __DIR__ . '/LocalThingsOwnerPskImporter.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.8.6';
+    public static $_pluginVersion = '0.8.7';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -905,10 +905,12 @@ class localthings extends eqLogic
             }
             $info->setSubType($subtype);
             $generatedUnit = (string) ($entity['unit'] ?? '');
-            $info->setUnite(self::preserveGeneratedValue(
+            $info->setUnite(self::preserveGeneratedUnit(
                 (string) $info->getUnite(),
                 $generatedUnit,
-                (string) $info->getConfiguration('generatedUnit', '')
+                (string) $info->getConfiguration('generatedUnit', ''),
+                $subtype,
+                $entityKey
             ));
             $info->setConfiguration('generatedUnit', $generatedUnit);
             $info->setConfiguration('managedByLocalThings', 1);
@@ -1073,6 +1075,19 @@ class localthings extends eqLogic
             return (string) $generated;
         }
         return $current;
+    }
+
+    private static function preserveGeneratedUnit($current, $generated, $previousGenerated, $subtype, $entityKey)
+    {
+        $current = trim((string) $current);
+        $generated = (string) $generated;
+        $previousGenerated = (string) $previousGenerated;
+        if ($generated === '' && $previousGenerated === '' && $subtype === 'string'
+            && preg_match('/(?:temperature|spin|essorage)/i', (string) $entityKey)
+            && in_array(strtolower($current), array('°c', '°f', 'tr/min', 'rpm'), true)) {
+            return '';
+        }
+        return self::preserveGeneratedValue($current, $generated, $previousGenerated);
     }
 
     private static function shouldRemoveManagedAction(
@@ -2284,6 +2299,44 @@ class localthings extends eqLogic
  */
 class localthingsCmd extends cmd
 {
+    private static function isCycleSettingBlocked($deviceType, $encoding, $machineState)
+    {
+        $deviceType = strtolower(trim((string) $deviceType));
+        $encoding = strtolower(trim((string) $encoding));
+        $machineState = strtolower(trim((string) $machineState));
+        return in_array($deviceType, array('washer', 'dryer'), true)
+            && in_array($machineState, array('active', 'pause'), true)
+            && !in_array($encoding, array('fixed', 'bool'), true);
+    }
+
+    private static function currentMachineState($eqLogic)
+    {
+        foreach ((array) $eqLogic->getCmd('info') as $command) {
+            if (stripos((string) $command->getConfiguration('entityKey', ''), 'currentMachineState') !== false) {
+                return strtolower(trim((string) $command->execCmd()));
+            }
+        }
+        return '';
+    }
+
+    private function restoreCurrentActionValue()
+    {
+        if (!in_array($this->getSubType(), array('select', 'slider'), true)) {
+            return;
+        }
+        $information = $this->getCmdValue();
+        if (!is_object($information)) {
+            return;
+        }
+        $value = $information->execCmd();
+        event::add('cmd::update', array(
+            'cmd_id' => (int) $this->getId(),
+            'value' => $value,
+            'display_value' => $value,
+            'unit' => method_exists($information, 'getUnite') ? (string) $information->getUnite() : '',
+        ));
+    }
+
     /**
      * Traduit les options Jeedom, envoie l'écriture puis applique son résultat.
      *
@@ -2308,6 +2361,7 @@ class localthingsCmd extends cmd
         try {
             return localthings::daemonCommand((int) $this->getId(), (array) $_options);
         } catch (Throwable $exception) {
+            $this->restoreCurrentActionValue();
             if (!($exception instanceof LocalThingsDaemonRemoteException)
                 || $exception->remoteCode() !== 'COMMAND_REJECTED') {
                 $eqLogic->recordCommunicationFailure($exception->getMessage());
@@ -2364,6 +2418,16 @@ class localthingsCmd extends cmd
             throw new RuntimeException(__('Recette de commande LocalThings absente', __FILE__));
         }
         try {
+            $machineState = self::currentMachineState($eqLogic);
+            if (self::isCycleSettingBlocked(
+                $eqLogic->getConfiguration('device_type', 'unknown'),
+                $recipe['encoding'] ?? 'same',
+                $machineState
+            )) {
+                throw new LocalThingsCommandRejectedException(
+                    __('Réglage impossible : un cycle est en cours', __FILE__)
+                );
+            }
             $result = localthings::deviceClient()->execute(
                 (string) $eqLogic->getConfiguration('host'),
                 (int) $eqLogic->getConfiguration('port'),
@@ -2374,6 +2438,7 @@ class localthingsCmd extends cmd
             $eqLogic->applyCommandResult($result);
             return $result;
         } catch (Exception $exception) {
+            $this->restoreCurrentActionValue();
             if (!($exception instanceof LocalThingsCommandRejectedException)) {
                 $eqLogic->recordCommunicationFailure($exception->getMessage());
             } else {

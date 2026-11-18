@@ -47,8 +47,11 @@
         <div class="tab-content localthings-widget-pages">
             <div role="tabpanel" class="tab-pane active" id="localthings-main-#uid#">
                 <div class="localthings-widget-status" style="display:#status_display#">#status_commands#</div>
-                <section class="localthings-widget-section" style="display:#settings_display#">
+                <section class="localthings-widget-section localthings-widget-settings" style="display:#settings_display#">
                     <h4>#settings_title#</h4>
+                    <div class="localthings-widget-cycle-notice" role="status" aria-live="polite" hidden>
+                        <i class="fas fa-lock"></i><span>{{Cycle en cours — réglages indisponibles}}</span>
+                    </div>
                     <div class="localthings-widget-command-grid">#settings_commands#</div>
                 </section>
                 <section class="localthings-widget-section" style="display:#controls_display#">
@@ -89,11 +92,11 @@
         widget.querySelectorAll('.localthings-widget-command-type-action').forEach(function (frame) {
             frame.setAttribute('aria-disabled', online ? 'false' : 'true');
             frame.querySelectorAll('button, input, select, textarea').forEach(function (control) {
-                if (!online && !control.disabled) {
+                if (!online && (!control.disabled || control.getAttribute('data-localthings-cycle-disabled') === '1')) {
                     control.setAttribute('data-localthings-offline-disabled', '1');
                     control.disabled = true;
                 } else if (online && control.getAttribute('data-localthings-offline-disabled') === '1') {
-                    control.disabled = false;
+                    if (control.getAttribute('data-localthings-cycle-disabled') !== '1') control.disabled = false;
                     control.removeAttribute('data-localthings-offline-disabled');
                 }
             });
@@ -216,6 +219,26 @@
         });
     });
     var statusContainer = widget.querySelector('.localthings-widget-status');
+    var settingsSection = widget.querySelector('.localthings-widget-settings');
+    var setSettingsLocked = function (locked) {
+        if (!settingsSection) return;
+        settingsSection.classList.toggle('localthings-settings-locked', locked);
+        settingsSection.setAttribute('aria-disabled', locked ? 'true' : 'false');
+        var notice = settingsSection.querySelector('.localthings-widget-cycle-notice');
+        if (notice) notice.hidden = !locked;
+        settingsSection.querySelectorAll('button, input, select, textarea').forEach(function (control) {
+            if (locked) {
+                if (!control.disabled || control.getAttribute('data-localthings-offline-disabled') === '1') {
+                    control.setAttribute('data-localthings-cycle-disabled', '1');
+                    control.disabled = true;
+                }
+            } else if (control.getAttribute('data-localthings-cycle-disabled') === '1') {
+                control.removeAttribute('data-localthings-cycle-disabled');
+                if (widget.getAttribute('data-online') !== 'false'
+                    && control.getAttribute('data-localthings-offline-disabled') !== '1') control.disabled = false;
+            }
+        });
+    };
     var normalizeStatus = function (value) {
         value = String(value || '').trim().toLowerCase();
         if (typeof value.normalize === 'function') {
@@ -235,6 +258,9 @@
     var syncOperatingStatus = function () {
         var stateFrame = widget.querySelector('.localthings-widget-command[data-status-slot="state"]');
         var state = statusValue(stateFrame);
+        var cycleGuardedDevice = /^(?:washer|dryer)$/.test(String(widget.getAttribute('data-device-type') || '').toLowerCase());
+        setSettingsLocked(cycleGuardedDevice
+            && /(?:^|\b)(?:active|run|running|en cours|pause|paused|en pause)(?:\b|$)/.test(state));
         var inactive = /(?:^|\b)(?:ready|pret|idle|pause|paused|stop|stopped|arrete|finished|termine|complete|completed|off)(?:\b|$)/.test(state);
         var operating = !inactive && /(?:^|\b)(?:run|running|en cours|en curso|lauft|working|washing|lavage|rinse|rincage|spin|essorage|drying|sechage|heating|chauffage|cooking|cuisson|cleaning|nettoyage|cooling|refroidissement|purifying|dehumidifying|operation)(?:\b|$)/.test(state);
         if (!state && stateFrame) operating = stateFrame.getAttribute('data-operating') === 'true';

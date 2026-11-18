@@ -165,8 +165,13 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
                 LocalThingsDiscovery::checkpoint();
             }
             $chunk = stream_get_contents($this->pipes[1]);
-            if ($chunk === false || $chunk === '') { break; }
-            if (function_exists('mb_strlen') && mb_strlen($response . $chunk, '8bit') > 40000) {
+            if ($chunk === false) {
+                throw new RuntimeException(__('Lecture RPC OwnerPSK impossible', __FILE__) . ' [ownerpsk_rpc_invalid]');
+            }
+            if ($chunk !== '') {
+                $response .= $chunk;
+            }
+            if (strlen($response) > 40000) {
                 throw new RuntimeException(__('Réponse RPC OwnerPSK trop volumineuse', __FILE__) . ' [ownerpsk_rpc_invalid]');
             }
             if (strpos($response, "\n") !== false) {
@@ -180,6 +185,10 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
                     throw new RuntimeException(__('Session OwnerPSK impossible ou interrompue', __FILE__) . $suffix);
                 }
                 return $decoded['result'] ?? null;
+            }
+            $status = @proc_get_status($this->process);
+            if ((!is_array($status) || empty($status['running'])) && feof($this->pipes[1])) {
+                throw new RuntimeException(__('Helper OwnerPSK interrompu', __FILE__) . ' [ownerpsk_helper_stopped]');
             }
             usleep(10000);
         }

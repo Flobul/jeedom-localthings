@@ -771,7 +771,10 @@ class LocalThingsWidget
             $priorities['state'] = 40;
         }
         $priority = $priorities[$slot] ?? 100;
-        if (strpos($identity, 'operational_state_vs_0') !== false) {
+        if (in_array($deviceType, array('washer', 'dryer'), true)
+            && strpos($identity, 'currentmachinestate') !== false) {
+            $priority -= 4;
+        } elseif (strpos($identity, 'operational_state_vs_0') !== false) {
             $priority -= 2;
         } elseif (strpos($identity, 'progress_time_set') !== false) {
             $priority += 5;

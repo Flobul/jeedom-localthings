@@ -10,7 +10,6 @@ import sys
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-import unittest.mock as mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 HELPER = ROOT / "resources" / "owner_psk_transport.py"
@@ -28,15 +27,12 @@ module.validate_credential(identity, bytes.fromhex("11" * 16))
 module.validate_credential(identity, bytes.fromhex("22" * 32))
 module.validate_credential(binary_identity, bytes.fromhex("11" * 16))
 engine = module.DtlsPskClient(identity=binary_identity, key=bytes.fromhex("11" * 16), mtu=1200)
-with mock.patch.object(
-    module.DtlsPskClient,
-    "generate_private_key",
-    return_value=object(),
-):
-    engine = module.DtlsPskClient(identity=binary_identity, key=bytes.fromhex("11" * 16), mtu=1200)
-    engine.public_key = lambda: object()
-    engine._private_key = object()
-    engine._peer_point = object()
+engine._private_key = ec.generate_private_key(ec.SECP256R1())
+peer_key = ec.generate_private_key(ec.SECP256R1())
+engine._peer_point = peer_key.public_key().public_bytes(
+    serialization.Encoding.X962,
+    serialization.PublicFormat.UncompressedPoint,
+)
 engine._client_random = bytes.fromhex("55" * 32)
 engine._server_random = bytes.fromhex("66" * 32)
 engine._send_client_flight()

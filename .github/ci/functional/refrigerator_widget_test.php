@@ -3,6 +3,15 @@
 function __($text, $file = null) { return $text; }
 
 require_once dirname(__DIR__, 3) . '/core/class/LocalThingsWidget.php';
+
+if (LocalThingsWidget::statusPriority('washer', 'operational_state_0_currentMachineState_abcd')
+    >= LocalThingsWidget::statusPriority('washer', 'operational_state_vs_0_state_abcd')) {
+    throw new RuntimeException('Washer widget must drive cycle locking from currentMachineState');
+}
+if (LocalThingsWidget::statusPriority('dishwasher', 'operational_state_0_currentMachineState_abcd')
+    < LocalThingsWidget::statusPriority('dishwasher', 'operational_state_vs_0_state_abcd')) {
+    throw new RuntimeException('Non-washer widgets must keep their existing state priority');
+}
 require_once dirname(__DIR__, 3) . '/core/class/LocalThingsMapper.php';
 
 function assertRefrigeratorWidget($condition, $message)
