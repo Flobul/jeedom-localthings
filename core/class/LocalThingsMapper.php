@@ -6,10 +6,17 @@
  * The map deliberately keeps every non-sensitive resource readable. Writable
  * controls are only exposed for Samsung resource shapes whose POST contract
  * is known, so an unknown field never becomes a dangerous guessed action.
+ * Exception explicite (revue P3) : les propriétés média OCF standard
+ * (networkaudio volume/mode/playback) sont exposées writables via le contrat
+ * POST OCF générique ; elles ne sont pas encore validées sur matériel réel
+ * (upstream #867/#868). Les appareils legacy 8888 restent en lecture seule.
  */
 class LocalThingsMapper
 {
     private const SENSITIVE_PATTERN = '/(?:password|passwd|token|secret|credential|certificate|privatekey|accesskey)/i';
+
+    /** @var array<int,string> Hrefs métier exposés mais non modélisés (diagnostic, upstream #867). */
+    private $unboundHrefs = array();
 
     /**
      * Déduit la famille de l'appareil depuis OCF et les ressources Samsung.
@@ -88,6 +95,18 @@ class LocalThingsMapper
             'oic.d.refrigerator' => 'refrigerator',
             'oic.d.krefrigerator' => 'refrigerator',
             'oic.d.washer' => 'washer',
+            // Média et petits appareils (upstream #868/#867/#891) : le peer PSK P1
+            // débloque l'authentification ; ces types routent vers un profil dédié.
+            'oic.d.tv' => 'tv',
+            'oic.d.networkaudio' => 'soundbar',
+            'x.com.st.d.networkaudio' => 'soundbar',
+            'oic.d.monitor' => 'monitor',
+            'oic.d.light' => 'light',
+            'oic.d.switch' => 'switch',
+            'oic.d.fan' => 'fan',
+            'oic.d.thermostat' => 'thermostat',
+            'oic.d.vacuum' => 'vacuum',
+            'oic.d.robotcleaner' => 'vacuum',
             'x.com.st.d.airqualitysensor' => 'air_monitor',
             'x.com.st.d.dehumidifier' => 'dehumidifier',
             'x.com.st.d.hood' => 'range_hood',
@@ -194,14 +213,17 @@ class LocalThingsMapper
     {
         $entities = array();
         $states = array();
+        $this->unboundHrefs = array();
         foreach ($resources as $href => $representation) {
             if (!is_string($href) || !is_array($representation)) {
                 continue;
             }
+            $bound = false;
             foreach ($representation as $field => $rawValue) {
                 if (!$this->includeField($field) || $this->skipFallbackField($href, $field, $resources)) {
                     continue;
                 }
+                $bound = true;
                 $key = $this->entityKey($href, $field);
                 $value = $this->displayValue($href, $field, $rawValue, $representation);
                 $actions = $this->actionsFor(
@@ -234,6 +256,9 @@ class LocalThingsMapper
                 $entities[] = $entity;
                 $states[$key] = $value;
             }
+            if (!$bound && strpos($href, '/oic/') !== 0) {
+                $this->unboundHrefs[] = $href;
+            }
         }
         $this->appendOptionEntities($resources, $entities, $states);
         $this->appendAirConditionerOptionEntities($resources, $entities, $states);
@@ -243,7 +268,18 @@ class LocalThingsMapper
         $this->appendTemperatureEntities($resources, $entities, $states);
         $this->appendMaintenanceSummary($resources, $entities, $states);
         $this->ensureUniqueEntityNames($entities);
-        return array('entities' => $entities, 'states' => $states);
+        return array('entities' => $entities, 'states' => $states, 'unbound_hrefs' => $this->unboundHrefs);
+    }
+
+    /**
+     * Hrefs métier exposés par l'appareil mais non modélisés (diagnostic, upstream #867).
+     * N'inclut pas les ressources structurelles /oic/* ; ne contient aucun secret.
+     *
+     * @return array<int,string>
+     */
+    public function unboundHrefs()
+    {
+        return $this->unboundHrefs;
     }
 
     /**
@@ -1529,6 +1565,10 @@ class LocalThingsMapper
         if (strpos($href, '/specialzone/') !== false) {
             return $field === 'roomDesiredMode';
         }
+        // Média : modes audio / lecture / source writables (upstream #867 networkaudio).
+        if (strpos($href, '/sec/networkaudio/') !== false || strpos($href, '/capability/') !== false) {
+            return preg_match('/(?:soundmode|mode|playback|mediaPlayback|inputSource|soundFrom)/i', $field) === 1;
+        }
         return strpos($field, 'modes') !== false
             || in_array($field, array('mode', 'speed', 'aiLevel', 'roomDesiredMode'), true)
             || strpos($href, '/hood/fanspeed/') !== false;
@@ -1543,6 +1583,11 @@ class LocalThingsMapper
      */
     private function isWritableNumberField($href, $field)
     {
+        // Média : volume et réglages audio numériques (upstream #867 networkaudio).
+        if (strpos($href, '/sec/networkaudio/') !== false
+            && preg_match('/(?:volume|woofer|treble|bass|balance)/i', $field) === 1) {
+            return true;
+        }
         return strpos($href, '/temperature/desired/') !== false
             || preg_match('/(?:desired|target|setpoint|brightness|level|humidity)/i', $field) === 1;
     }
@@ -1679,7 +1724,15 @@ class LocalThingsMapper
             return (float) $value;
         }
         if (is_numeric($value) && preg_match('/instantaneousPower$/i', $field)) {
-            return max(0.0, (float) $value);
+            $power = (float) $value;
+            // Certaines firmwares rapportent une puissance signée 16 bits lue comme
+            // non signée : en veille, une valeur négative devient ~65278/65535 W
+            // (upstream #625). Réinterpréter la plage haute comme un int16 négatif
+            // puis borner à 0 ; les valeurs réelles (< 32768 W) restent intactes.
+            if ($power >= 32768.0 && $power <= 65535.0) {
+                $power -= 65536.0;
+            }
+            return max(0.0, $power);
         }
         if ($this->isBinaryField($href, $field, $value)) {
             return $this->toBoolean($value) ? 1 : 0;
@@ -2062,7 +2115,7 @@ class LocalThingsMapper
      */
     private function translatedIdentifier($identifier)
     {
-        $identifier = preg_replace('/^x\.com\.samsung\.da\./i', '', (string) $identifier);
+        $identifier = preg_replace('/^x\.com\.samsung\.(?:da|networkaudio)\./i', '', (string) $identifier);
         $compact = strtolower(preg_replace('/[^a-z0-9]/i', '', $identifier));
         $phrases = array(
             'information' => __('Informations de l’appareil', __FILE__),
@@ -2080,6 +2133,19 @@ class LocalThingsMapper
             'value' => __('Valeur', __FILE__),
             'state' => __('État', __FILE__),
             'mode' => __('Mode', __FILE__),
+            'volume' => __('Volume', __FILE__),
+            'channelvolume' => __('Volume du canal', __FILE__),
+            'soundmode' => __('Mode sonore', __FILE__),
+            'woofer' => __('Caisson de basses', __FILE__),
+            'treble' => __('Aigus', __FILE__),
+            'bass' => __('Basses', __FILE__),
+            'playback' => __('Lecture', __FILE__),
+            'mediaplayback' => __('Lecture média', __FILE__),
+            'mediatrackcontrol' => __('Contrôle de piste', __FILE__),
+            'audiotrackdata' => __('Piste audio', __FILE__),
+            'picturemode' => __('Mode d’image', __FILE__),
+            'channel' => __('Chaîne', __FILE__),
+            'btconntype' => __('Type de connexion Bluetooth', __FILE__),
             'wmstatus' => __('État du lave-linge', __FILE__),
             'wmconfig' => __('Configuration du lave-linge', __FILE__),
             'devicetype' => __('Type d’appareil', __FILE__),

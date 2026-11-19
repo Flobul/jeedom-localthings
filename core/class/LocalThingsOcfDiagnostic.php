@@ -429,6 +429,40 @@ class LocalThingsOcfDiagnostic
         return $ports;
     }
 
+    /**
+     * Suivi d'adresse DHCP par identité di (upstream #469/#647) : redécouvre l'appareil
+     * sur le LAN quelle que soit son IP source (multicast toute IPv4), lit son di et
+     * retourne sa nouvelle adresse + ports DTLS si le di correspond. di jamais journalisé.
+     * Retourne null si l'appareil n'est pas retrouvé (l'appelant marque alors offline).
+     * @return array{ip:string,ports:array<int,int>}|null
+     */
+    public function discoverHostByDi($expectedDi, callable $logger, $target = '224.0.1.187:5683', $timeout = 4.0)
+    {
+        $expectedDi = trim((string) $expectedDi);
+        if ($expectedDi === '' || strlen($expectedDi) > 255) {
+            return null;
+        }
+        $timeout = max(0.5, min(10.0, (float) $timeout));
+        try {
+            $responders = $this->multicastResponders($target, $timeout, $expectedDi, true);
+        } catch (LocalThingsDiscoveryCancelled $error) {
+            throw $error;
+        } catch (Throwable $error) {
+            $logger('info', '[OCF suivi IP] multicast indisponible ; étape=' . $this->stage);
+            return null;
+        }
+        foreach ($responders as $responder) {
+            if ((string) ($responder['di'] ?? '') === $expectedDi && !empty($responder['ip'])) {
+                $ports = isset($responder['ports']) ? (array) $responder['ports'] : array();
+                $logger('info', '[OCF suivi IP] appareil retrouvé par di ; répondeurs=' . count($responders)
+                    . ' ; ports_dtls=' . count($ports));
+                return array('ip' => (string) $responder['ip'], 'ports' => $ports);
+            }
+        }
+        $logger('info', '[OCF suivi IP] di non retrouvé ; répondeurs=' . count($responders));
+        return null;
+    }
+
     /** Pur : retient les ports du ou des répondeurs dont di correspond exactement. */
     public static function selectPortsForDi(array $responders, $expectedDi)
     {
@@ -493,7 +527,7 @@ class LocalThingsOcfDiagnostic
      * /oic/d de chaque répondeur pour obtenir di. Aucun di n'est journalisé.
      * @return array<int,array{di:string,ports:array<int,int>,port:int}>
      */
-    private function multicastResponders($target, $timeout, $expectedDi = '')
+    private function multicastResponders($target, $timeout, $expectedDi = '', $anyHost = false)
     {
         $colon = strrpos($target, ':');
         $address = $colon === false ? $target : substr($target, 0, $colon);
@@ -534,7 +568,11 @@ class LocalThingsOcfDiagnostic
                 $bytes = @stream_socket_recvfrom($socket, 16385, 0, $peer);
                 if (!is_string($bytes) || $bytes === '' || strlen($bytes) > 16384) { continue; }
                 $peerHost = substr($peer, 0, strrpos($peer, ':'));
-                if (strpos($peerHost, '[') !== false || $peerHost !== $this->host) { continue; }
+                if ($anyHost) {
+                    // Suivi DHCP : accepter tout répondeur IPv4 du LAN (upstream #469/#647).
+                    if (strpos($peerHost, '[') !== false
+                        || filter_var($peerHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) { continue; }
+                } elseif (strpos($peerHost, '[') !== false || $peerHost !== $this->host) { continue; }
                 $peerPort = (int) substr(strrchr($peer, ':'), 1);
                 try {
                     $response = LocalThingsCoap::parse($bytes);
@@ -545,7 +583,7 @@ class LocalThingsOcfDiagnostic
                 if (!hash_equals($token, $response['token']) || $response['type'] === LocalThingsCoap::TYPE_RST) { continue; }
                 if (!isset($peers[$peer])) {
                     $peers[$peer] = array('blocks' => array(), 'next' => 0, 'done' => false,
-                        'links' => array(), 'port' => $peerPort);
+                        'links' => array(), 'port' => $peerPort, 'ip' => $peerHost);
                 }
                 if ($response['type'] === LocalThingsCoap::TYPE_ACK && $response['code'] === 0) { continue; }
                 if ($response['type'] === LocalThingsCoap::TYPE_CON) {
@@ -584,7 +622,7 @@ class LocalThingsOcfDiagnostic
                     $peers[$peer]['links'] = $decoded;
                     // Lire di dès que le répertoire est complet ; sortie anticipée
                     // si le di recherché est trouvé, sinon collecte jusqu'au délai.
-                    $peers[$peer]['di'] = $this->readDiUnicast($peerPort, min(2.0, $timeout));
+                    $peers[$peer]['di'] = $this->readDiUnicast($peerPort, min(2.0, $timeout), $peerHost);
                     if ($expectedDi !== '' && $peers[$peer]['di'] === $expectedDi) { break; }
                 }
             }
@@ -592,9 +630,10 @@ class LocalThingsOcfDiagnostic
             $responders = array();
             foreach ($peers as $state) {
                 if (!$state['links']) { continue; }
-                $ports = self::extractCoapsPorts($state['links'], $this->host);
-                $di = array_key_exists('di', $state) ? $state['di'] : $this->readDiUnicast($state['port'], min(2.0, $timeout));
-                $responders[] = array('di' => $di, 'ports' => $ports, 'port' => $state['port']);
+                $responderHost = $anyHost ? $state['ip'] : $this->host;
+                $ports = self::extractCoapsPorts($state['links'], $responderHost);
+                $di = array_key_exists('di', $state) ? $state['di'] : $this->readDiUnicast($state['port'], min(2.0, $timeout), $responderHost);
+                $responders[] = array('di' => $di, 'ports' => $ports, 'port' => $state['port'], 'ip' => $responderHost);
             }
             return $responders;
         } finally {
@@ -622,12 +661,13 @@ class LocalThingsOcfDiagnostic
     }
 
     /** Lit /oic/d en unicast vers un port répondeur et retourne di (usage interne, jamais journalisé). */
-    private function readDiUnicast($port, $timeout)
+    private function readDiUnicast($port, $timeout, $host = null)
     {
+        $targetHost = $host === null ? $this->host : $host;
         $socket = @stream_socket_server('udp://0.0.0.0:0', $errno, $error, STREAM_SERVER_BIND);
         if (!is_resource($socket)) { return ''; }
         stream_set_blocking($socket, false);
-        $target = $this->host . ':' . (int) $port;
+        $target = $targetHost . ':' . (int) $port;
         $token = random_bytes(4);
         $deadline = microtime(true) + max(0.2, min(3.0, $timeout));
         $payload = '';
@@ -647,7 +687,7 @@ class LocalThingsOcfDiagnostic
                 if (@stream_select($read, $write, $except, 0, 100000) <= 0) { continue; }
                 $peer = '';
                 $bytes = @stream_socket_recvfrom($socket, 16385, 0, $peer);
-                if (!is_string($bytes) || $bytes === '' || substr($peer, 0, strrpos($peer, ':')) !== $this->host) { continue; }
+                if (!is_string($bytes) || $bytes === '' || substr($peer, 0, strrpos($peer, ':')) !== $targetHost) { continue; }
                 try {
                     $response = LocalThingsCoap::parse($bytes);
                 } catch (Throwable $error) {

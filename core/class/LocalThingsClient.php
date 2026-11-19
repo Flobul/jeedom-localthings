@@ -5,6 +5,10 @@ require_once __DIR__ . '/LocalThingsOwnerPsk.php';
 require_once __DIR__ . '/LocalThingsOcfDiagnostic.php';
 require_once __DIR__ . '/LocalThingsDtlsProbe.php';
 require_once __DIR__ . '/LocalThingsOcfOnboardingDiagnostic.php';
+require_once __DIR__ . '/LocalThingsLegacyProbe.php';
+require_once __DIR__ . '/LocalThingsLegacyClient.php';
+require_once __DIR__ . '/LocalThingsLegacyToken.php';
+require_once __DIR__ . '/LocalThingsLegacySecret.php';
 
 /**
  * Signale une commande reçue par l'appareil mais refusée ou non appliquée.
@@ -340,7 +344,14 @@ class LocalThingsDeviceClient
         // Une erreur d'authentification ou de lecture n'est pas une ambiguïté.
         $candidatePorts = LocalThingsDtlsProbe::livePorts($results);
         if (!$candidatePorts) {
-            throw new RuntimeException(__('Aucun service DTLS acceptant un ClientHello initial détecté', __FILE__));
+            // Pas de DTLS : distinguer la famille legacy pré-DTLS (8888 ouvert,
+            // bascule dédiée) d'un appareil sans interface locale (cloud-only).
+            $legacyOpen = LocalThingsLegacyProbe::tcpPortOpen($host, LocalThingsLegacyProbe::LEGACY_PORT);
+            if ($legacyOpen) {
+                $this->log('info', '[Discovery] Aucun DTLS mais port legacy 8888 ouvert ; tentative famille pré-DTLS');
+                return $this->probeLegacyDevice($host);
+            }
+            throw new RuntimeException(LocalThingsLegacyProbe::noLocalApiMessage($host));
         }
         try {
             $selected = LocalThingsDtlsProbe::select($results, $selectionPreference);
@@ -368,6 +379,158 @@ class LocalThingsDeviceClient
     }
 
     /**
+     * Bascule legacy pré-DTLS (upstream #168/#257/#887) : aucun DTLS détecté mais
+     * port 8888 ouvert. Mint un certificat client, obtient un jeton d'appareil via
+     * le callback 8889, lit /devices/0 et traduit vers des ressources OCF-like.
+     * Additif : n'altère pas le chemin DTLS des appareils déjà supportés.
+     *
+     * LIMITE : nécessite TLS 1.0 (OpenSSL récent l'a retiré) ; le refresh périodique
+     * des appareils legacy n'est pas encore routé vers ce transport (découverte +
+     * lecture initiale seulement). Non validé sur matériel réel.
+     *
+     * @param string $host Adresse IPv4.
+     * @return array<string,mixed> Instantané compatible probeCandidates.
+     */
+    protected function probeLegacyDevice($host)
+    {
+        if (!LocalThingsLegacyClient::tls10Available()) {
+            throw new RuntimeException(LocalThingsLegacyClient::tls10UnsupportedMessage());
+        }
+        $certId = 'legacy-' . substr(hash('sha256', (string) $host), 0, 16);
+        list($certPem, $keyPem) = $this->legacyClientCert($certId);
+        $this->log('info', '[Legacy] ' . $host . ' : obtention du jeton d’appareil via callback 8889');
+        $token = LocalThingsLegacyToken::obtain($host, LocalThingsLegacyClient::LEGACY_PORT, $certPem, $keyPem, $this->logger);
+        if ($token === null || $token === '') {
+            throw new RuntimeException(__('Aucun jeton d’appareil legacy obtenu (appareil endormi ou callback 8889 injoignable). Un jeton peut être importé manuellement.', __FILE__));
+        }
+        $snapshot = $this->readLegacySnapshot($host, $certPem, $keyPem, $token);
+        // N1 : le jeton et le cert_id vont dans le coffre privé (dataPath), pas dans
+        // la configuration eqLogic ni l'instantané IPC.
+        $this->legacySecretStore()->save($snapshot['device']['device_id'], $token, $certId);
+        return $snapshot;
+    }
+
+    /**
+     * Refresh d'un appareil legacy connu (auth_mode legacy_token) : lecture seule
+     * via le pont 8888, sans passer par le chemin DTLS/CoAP (D1 revue P3). Le jeton
+     * persisté est réutilisé ; un nouveau jeton n'est demandé que s'il est absent.
+     *
+     * @param string $host
+     * @param array<string,mixed> $knownDevice
+     * @return array<string,mixed>
+     */
+    protected function refreshLegacy($host, $knownDevice)
+    {
+        if (!LocalThingsLegacyClient::tls10Available()) {
+            throw new RuntimeException(LocalThingsLegacyClient::tls10UnsupportedMessage());
+        }
+        $deviceId = trim((string) ($knownDevice['device_id'] ?? ''));
+        $secret = $deviceId !== '' ? $this->legacySecretStore()->load($deviceId) : null;
+        // O1 : réutiliser le cert_id de la découverte pour que le même certificat
+        // client accompagne le même jeton (évite un 401 si le pont lie les deux).
+        $certId = ($secret !== null && $secret['cert_id'] !== '') ? $secret['cert_id'] : $deviceId;
+        if ($certId === '') {
+            $certId = 'legacy-' . substr(hash('sha256', (string) $host), 0, 16);
+        }
+        list($certPem, $keyPem) = $this->legacyClientCert($certId);
+        $token = ($secret !== null) ? $secret['token'] : '';
+        if ($token === '') {
+            $token = LocalThingsLegacyToken::obtain($host, LocalThingsLegacyClient::LEGACY_PORT, $certPem, $keyPem, $this->logger);
+            if ($token !== null && $token !== '' && $deviceId !== '') {
+                $this->legacySecretStore()->save($deviceId, $token, $certId);
+            }
+        }
+        if ($token === null || $token === '') {
+            throw new RuntimeException(__('Aucun jeton d’appareil legacy disponible pour le rafraîchissement ; appairage requis.', __FILE__));
+        }
+        return $this->readLegacySnapshot($host, $certPem, $keyPem, $token, $knownDevice);
+    }
+
+    /**
+     * Mint (ou réutilise) le certificat client legacy pour un identifiant donné.
+     *
+     * @param string $certId
+     * @return array{0:string,1:string} PEM cert + clé.
+     */
+    private function legacyClientCert($certId)
+    {
+        list($certificatePath, $caChainPath, $keyPath) = $this->certificateStore->mintLeafForProfile(
+            $certId,
+            LocalThingsCertificateStore::PROFILE_AC14K_M
+        );
+        $certPem = (string) @file_get_contents($certificatePath);
+        $keyPem = (string) @file_get_contents($keyPath);
+        if ($certPem === '' || $keyPem === '') {
+            throw new RuntimeException(__('Certificat client legacy introuvable.', __FILE__));
+        }
+        return array($certPem, $keyPem);
+    }
+
+    /**
+     * Coffre privé des jetons legacy (dataPath), même pattern que OwnerPSK.
+     *
+     * @return LocalThingsLegacySecret
+     */
+    private function legacySecretStore()
+    {
+        return new LocalThingsLegacySecret($this->certificateStore->dataDirectory());
+    }
+
+    /**
+     * Lit un appareil legacy et construit un instantané en LECTURE SEULE : identité
+     * stable fondée sur le série/modèle (D3), entités sans action writable (le
+     * contrat d'écriture POST legacy n'est pas porté), jeton conservé pour le refresh.
+     *
+     * @param string $host
+     * @param string $certPem
+     * @param string $keyPem
+     * @param string $token
+     * @param array<string,mixed> $knownDevice
+     * @return array<string,mixed>
+     */
+    private function readLegacySnapshot($host, $certPem, $keyPem, $token, $knownDevice = array())
+    {
+        $client = new LocalThingsLegacyClient($host, LocalThingsLegacyClient::LEGACY_PORT, $certPem, $keyPem, $token, $this->logger);
+        $resources = $client->readDevice(0);
+        $information = isset($resources['/information/vs/0']) ? $resources['/information/vs/0'] : array();
+        $model = trim((string) ($information['x.com.samsung.da.modelNum'] ?? ''));
+        $serial = trim((string) ($information['x.com.samsung.da.serialNum'] ?? ''));
+        $deviceId = trim((string) ($knownDevice['device_id'] ?? ''));
+        if ($deviceId === '') {
+            $deviceId = LocalThingsLegacyClient::stableDeviceId($serial, $model, $host);
+        }
+        $deviceType = $this->mapper->deviceType($resources, array('model' => $model));
+        $mapped = $this->mapper->map($resources);
+        $entities = LocalThingsLegacyClient::readOnlyEntities($mapped['entities']);
+        $this->log('info', '[Legacy] ' . $host . ' : appareil lu (lecture seule), type=' . $deviceType
+            . ', ressources=' . count($resources) . ', entités=' . count($entities));
+        return array(
+            'device' => array(
+                'device_id' => $deviceId,
+                'ocf_di' => '',
+                'di_verified' => false,
+                'host' => $host,
+                'port' => LocalThingsLegacyClient::LEGACY_PORT,
+                'auth_mode' => 'legacy_token',
+                'serial' => $serial,
+                'name' => $model !== '' ? $model : __('Appareil legacy', __FILE__),
+                'manufacturer' => 'Samsung',
+                'model' => $model,
+                'device_type' => $deviceType,
+                'connected' => true,
+                'last_update' => time(),
+                'last_error' => '',
+                'parent_device_id' => '',
+                'subdevice_uuid' => '',
+            ),
+            'entities' => $entities,
+            'states' => $mapped['states'],
+            'resources' => $resources,
+            'subdevices' => array(),
+        );
+    }
+
+    /**
      * Relit l'état complet d'un appareil connu.
      *
      * @param string $host Adresse IPv4 cible.
@@ -378,6 +541,11 @@ class LocalThingsDeviceClient
     public function refresh($host, $port, $knownDevice = array())
     {
         $host = $this->validateHost($host);
+        if (($knownDevice['auth_mode'] ?? '') === 'legacy_token') {
+            return $this->withHostLock($host, function () use ($host, $knownDevice) {
+                return $this->refreshLegacy($host, $knownDevice);
+            });
+        }
         return $this->withHostLock($host, function () use ($host, $port, $knownDevice) {
             $readOnly = ($knownDevice['auth_mode'] ?? '') === self::AUTH_READ_ONLY;
             $key = $this->sessionCacheKey($host, (int) $port, $readOnly);
@@ -397,6 +565,25 @@ class LocalThingsDeviceClient
                     return $this->recoverRefreshEndpoint($host, (int) $port, $knownDevice, $error);
                 }
             }
+        });
+    }
+
+    /**
+     * Rafraîchit l'inventaire complet (identité + ressources + sous-équipements) afin
+     * de matérialiser en grow-only les ressources/sous-équipements apparus en cours de
+     * route (upstream #851). Budget borné ; l'appelant retombe sur un refresh léger en
+     * cas d'échec. Les personnalisations sont préservées par syncCommands/registerSnapshot.
+     */
+    public function refreshInventory($host, $port, $knownDevice = array())
+    {
+        $host = $this->validateHost($host);
+        if (($knownDevice['auth_mode'] ?? '') === 'legacy_token') {
+            return $this->withHostLock($host, function () use ($host, $knownDevice) {
+                return $this->refreshLegacy($host, $knownDevice);
+            });
+        }
+        return $this->withHostLock($host, function () use ($host, $port, $knownDevice) {
+            return $this->readSnapshot($host, (int) $port, 12.0, true, $knownDevice, null, 45.0, false);
         });
     }
 

@@ -1,6 +1,21 @@
 # Changelog
 ## Non publié
 
+## Version 0.9.0 (19/11/2026)
+
+- Un appareil dont l’adresse IP change (bail DHCP) n’est plus marqué mort : le plugin le retrouve sur le réseau grâce à son identifiant authentifié `di` et met à jour son adresse automatiquement, sans toucher aux commandes ni aux personnalisations.
+- Les ressources et sous-équipements apparus après une mise à jour du firmware ou une reconnexion sont ajoutés progressivement lors d’un rafraîchissement d’inventaire périodique, sans écraser les noms, unités et bornes personnalisés.
+- Le diagnostic de certificat affiche les autorités racines acceptées par l’appareil en cas de refus `unknown_ca`, afin de distinguer un appareil PSK-only d’un appareil attendant une autre autorité que celle fournie par le plugin.
+- La puissance instantanée n’affiche plus de valeur aberrante en veille (par exemple 65278 W) : ces sentinelles sont ramenées à 0, les valeurs réelles restant inchangées.
+- L’import depuis une sauvegarde iPhone propose une aide contextuelle pour obtenir une clé utilisable : sauvegarde du téléphone d’origine, sauvegarde chiffrée, fichier à extraire et recette de ré-appairage lorsqu’aucune clé n’est exploitable.
+- Les téléviseurs, barres de son et moniteurs Samsung sont reconnus comme familles d’appareils à part entière, avec leurs commandes média (volume, mode sonore, lecture, réglages audio) ; les lumières, ventilateurs, thermostats et aspirateurs connectés sont également identifiés au lieu de rester génériques.
+- Tout appareil OCF, même d’un modèle non répertorié, voit ses ressources exposées traduites en commandes ; les ressources que le plugin ne sait pas encore modéliser sont signalées dans le diagnostic pour faciliter leur prise en charge.
+- Les appareils anciens de la famille pré-DTLS (pont 8888, certains FlexDry et dongles) sont détectés et lus en **lecture seule** via un transport dédié, avec rafraîchissement périodique et identité stable fondée sur le numéro de série (pas de doublon si l’IP change), sans perturber les appareils DTLS existants. Ce transport nécessite un hôte dont la bibliothèque SSL autorise encore TLS 1.0 ; un message clair l’indique sinon. Le pilotage (commandes) de ces appareils legacy n’est pas encore porté. Le jeton d’appareil est conservé dans un coffre privé (hors configuration visible), comme les clés OwnerPSK.
+- Un appareil qui n’expose aucune interface locale (ni DTLS, ni 8888) est désormais identifié comme pilotable uniquement via le cloud SmartThings, avec un message explicite au lieu d’un échec ambigu.
+- Une documentation d’acquisition de clé par famille d’appareil (lave-linge, réfrigérateur peer, TV/Frame, média, moniteur, legacy) est fournie.
+- Un badge sous « Port DTLS » indique le type de connexion de l’équipement (DTLS, legacy 8888, CoAP public, ou ni DTLS ni 8888 ni CoAP) ; ce type est aussi compté dans le diagnostic communauté.
+- Un changement d’adresse IP (bail DHCP) ne crée plus d’équipement en doublon : l’équipement existant est retrouvé par son identité stable (numéro de série ou identifiant authentifié `di`) avant toute création, en réutilisant la recherche par configuration du core Jeedom.
+
 ## Version 0.8.8 (19/11/2026)
 
 - Découverte plus fiable des appareils qui partagent une même adresse IP (Family Hub, climatiseurs à pile OCF co-localisée) : le plugin interroge aussi le multicast OCF et retient l’équipement dont l’identifiant authentifié correspond, au lieu de risquer de lire la mauvaise pile. L’identifiant `di` authentifié est conservé séparément de l’adresse et du port, et un endpoint retrouvé dont l’identité diffère est ignoré.

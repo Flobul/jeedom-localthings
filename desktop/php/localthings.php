@@ -77,6 +77,14 @@ $eqLogics = eqLogic::byType($plugin->getId());
                     </summary>
                     <div class="localthings-ownerpsk-method-body">
                         <p>{{Sélectionnez le fichier SmartThings Library/Security/oic_svr_db_client.dat déjà extrait de la sauvegarde. Il est décodé en mémoire, n’est pas conservé et son contenu n’est jamais écrit dans les logs.}}</p>
+                        <div class="help-block localthings-ownerpsk-guidance">
+                            <strong>{{Pour obtenir une clé utilisable}}</strong>
+                            <ul style="margin-bottom:0;">
+                                <li>{{Utilisez la sauvegarde du téléphone qui a appairé l’appareil (pas un autre téléphone) et une sauvegarde chiffrée : le dossier Security n’est présent que dans ce cas.}}</li>
+                                <li>{{Fichier à extraire : Library/Security/oic_svr_db_client.dat (fileID f838d92e… dans la sauvegarde). Un outil comme iphone_backup_decrypt extrait les sauvegardes chiffrées.}}</li>
+                                <li>{{Si aucune clé n’est utilisable (entrées credtype 8 = trust_ca), ré-appairez l’appareil via Easy Connect / code PIN (oxm 1) dans SmartThings, puis refaites une sauvegarde chiffrée.}}</li>
+                            </ul>
+                        </div>
                         <div class="input-group">
                             <input id="in_ownerPskDatabase" class="form-control" type="file" accept=".dat,application/octet-stream">
                             <span class="input-group-btn">
@@ -281,6 +289,7 @@ $eqLogics = eqLogic::byType($plugin->getId());
                                 'device_id' => __('Identifiant', __FILE__),
                                 'host' => __('Adresse IP', __FILE__),
                                 'port' => __('Port DTLS', __FILE__),
+                                'connection_type' => __('Type de connexion', __FILE__),
                                 'access_mode' => __('Accès à l’appareil', __FILE__),
                                 'manufacturer' => __('Fabricant', __FILE__),
                                 'model' => __('Modèle', __FILE__),
@@ -292,7 +301,11 @@ $eqLogics = eqLogic::byType($plugin->getId());
                                 <div class="form-group">
                                     <label class="col-sm-4 control-label"><?php echo $label; ?></label>
                                     <div class="col-sm-8">
-                                        <span class="eqLogicAttr localthings-value" data-l1key="configuration" data-l2key="<?php echo $key; ?>"></span>
+                                        <?php if ($key === 'connection_type') { ?>
+                                            <span class="eqLogicAttr label label-info localthings-connection-badge" data-l1key="configuration" data-l2key="connection_type"></span>
+                                        <?php } else { ?>
+                                            <span class="eqLogicAttr localthings-value" data-l1key="configuration" data-l2key="<?php echo $key; ?>"></span>
+                                        <?php } ?>
                                     </div>
                                 </div>
                             <?php } ?>

@@ -19,13 +19,17 @@ require_once __DIR__ . '/LocalThingsDaemonClient.php';
 require_once __DIR__ . '/LocalThingsDaemon.php';
 require_once __DIR__ . '/LocalThingsOfflineBackoff.php';
 require_once __DIR__ . '/LocalThingsOwnerPskImporter.php';
+require_once __DIR__ . '/LocalThingsLegacyProbe.php';
+require_once __DIR__ . '/LocalThingsLegacyClient.php';
+require_once __DIR__ . '/LocalThingsLegacyToken.php';
+require_once __DIR__ . '/LocalThingsLegacySecret.php';
 
 /**
  * Représente un équipement LocalThings et son intégration au cycle de vie Jeedom.
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.8.8';
+    public static $_pluginVersion = '0.9.0';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -107,8 +111,88 @@ class localthings extends eqLogic
             }
         }
         $lines[] = __('Équipements avec échecs mémorisés', __FILE__) . ' : ' . ($invalid > 0 ? $unknown : (string) $total);
+        $typeCounts = array('dtls' => 0, 'legacy_8888' => 0, 'coap' => 0, 'none' => 0);
+        foreach ($equipments as $equipment) {
+            $type = self::connectionType($equipment->getConfiguration('auth_mode', ''));
+            $typeCounts[$type]++;
+        }
+        $lines[] = __('Type de connexion — DTLS', __FILE__) . ' : ' . $typeCounts['dtls'];
+        $lines[] = __('Type de connexion — Legacy 8888', __FILE__) . ' : ' . $typeCounts['legacy_8888'];
+        $lines[] = __('Type de connexion — CoAP public', __FILE__) . ' : ' . $typeCounts['coap'];
+        $lines[] = __('Type de connexion — Ni DTLS, ni 8888, ni CoAP', __FILE__) . ' : ' . $typeCounts['none'];
         $lines[] = '<!-- JEEDOM_PLUGIN_DIAGNOSTICS_END -->';
         return implode($_separator, $lines) . $_separator;
+    }
+
+    /**
+     * Pur : type de connexion local déduit du mode d'authentification enregistré.
+     * Sert au badge de la page équipement et au diagnostic communauté.
+     *
+     * @param string $authMode Mode d'authentification (auth_mode).
+     * @return string 'dtls'|'legacy_8888'|'coap'|'none'
+     */
+    public static function connectionType($authMode)
+    {
+        switch ((string) $authMode) {
+            case 'certificate':
+            case 'owner_psk':
+                return 'dtls';
+            case 'legacy_token':
+                return 'legacy_8888';
+            case LocalThingsDeviceClient::AUTH_READ_ONLY:
+                return 'coap';
+            default:
+                return 'none';
+        }
+    }
+
+    /**
+     * Pur : libellé localisé du type de connexion pour le badge équipement.
+     *
+     * @param string $authMode
+     * @return string
+     */
+    public static function connectionTypeLabel($authMode)
+    {
+        switch (self::connectionType($authMode)) {
+            case 'dtls':
+                return __('DTLS (OCF sécurisé)', __FILE__);
+            case 'legacy_8888':
+                return __('Legacy 8888 (pré-DTLS)', __FILE__);
+            case 'coap':
+                return __('CoAP public (lecture seule)', __FILE__);
+            default:
+                return __('Ni DTLS, ni 8888, ni CoAP', __FILE__);
+        }
+    }
+
+    /**
+     * Anti-doublon DHCP : retrouve un équipement parent par identité stable (numéro
+     * de série ou di authentifié) même si device_id/host a changé après un nouveau
+     * bail. Réutilise eqLogic::byTypeAndSearchConfiguration du core Jeedom plutôt
+     * que de refabriquer une recherche par configuration.
+     *
+     * @param array<string,mixed> $device
+     * @return object|null
+     */
+    private static function byStableIdentity($device)
+    {
+        foreach (array('serial', 'ocf_di') as $key) {
+            $value = trim((string) ($device[$key] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            $matches = eqLogic::byTypeAndSearchConfiguration(__CLASS__, array($key => $value));
+            if (!is_array($matches)) {
+                continue;
+            }
+            foreach ($matches as $candidate) {
+                if (is_object($candidate) && trim((string) $candidate->getConfiguration('subdevice_uuid', '')) === '') {
+                    return $candidate;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -566,6 +650,9 @@ class localthings extends eqLogic
                 (int) ($device['port'] ?? 0)
             );
         }
+        if (!is_object($eqLogic) && $subdeviceUuid === '') {
+            $eqLogic = self::byStableIdentity($device);
+        }
         $isNew = !is_object($eqLogic);
         if ($isNew) {
             $eqLogic = new self();
@@ -586,8 +673,10 @@ class localthings extends eqLogic
         $eqLogic->setConfiguration('host', (string) ($device['host'] ?? ''));
         $eqLogic->setConfiguration('port', (int) ($device['port'] ?? 0));
         $eqLogic->setConfiguration('auth_mode', (string) ($device['auth_mode'] ?? 'certificate'));
-        $eqLogic->setConfiguration('access_mode', ($device['auth_mode'] ?? '') === LocalThingsDeviceClient::AUTH_READ_ONLY
+        $eqLogic->setConfiguration('access_mode', (($device['auth_mode'] ?? '') === LocalThingsDeviceClient::AUTH_READ_ONLY
+            || ($device['auth_mode'] ?? '') === 'legacy_token')
             ? __('Lecture seule — pilotage non validé', __FILE__) : __('Connexion standard', __FILE__));
+        $eqLogic->setConfiguration('connection_type', self::connectionTypeLabel((string) ($device['auth_mode'] ?? 'certificate')));
         $eqLogic->setConfiguration('manufacturer', (string) ($device['manufacturer'] ?? 'Samsung'));
         $eqLogic->setConfiguration('model', (string) ($device['model'] ?? ''));
         $eqLogic->setConfiguration('device_type', (string) ($device['device_type'] ?? 'unknown'));
@@ -1695,10 +1784,116 @@ class localthings extends eqLogic
         if ($host === '' || $port === 0) {
             throw new RuntimeException(__('Adresse LocalThings absente', __FILE__));
         }
-        $snapshot = self::deviceClient()->refresh($host, $port, $this->knownDeviceContext());
-        self::registerSnapshot($snapshot);
+        $context = $this->knownDeviceContext();
+        $inventoryDue = $this->inventoryRefreshDue();
+        try {
+            $snapshot = $inventoryDue
+                ? self::deviceClient()->refreshInventory($host, $port, $context)
+                : self::deviceClient()->refresh($host, $port, $context);
+        } catch (LocalThingsDiscoveryCancelled $cancel) {
+            throw $cancel;
+        } catch (Throwable $error) {
+            // Un inventaire grow-only en échec ne doit pas marquer l'appareil mort :
+            // on retombe d'abord sur le refresh léger (upstream #851).
+            if ($inventoryDue) {
+                $inventoryDue = false;
+                try {
+                    $snapshot = self::deviceClient()->refresh($host, $port, $context);
+                } catch (LocalThingsDiscoveryCancelled $cancel) {
+                    throw $cancel;
+                } catch (Throwable $lightError) {
+                    $error = $lightError;
+                }
+            }
+            if (!isset($snapshot)) {
+                // Bail DHCP changé : tenter de suivre l'appareil par di avant de le
+                // marquer mort (upstream #469/#647). Une seule relance sur la nouvelle adresse.
+                $followed = $this->followDeviceByDi($host, $port);
+                if ($followed === null) {
+                    throw $error;
+                }
+                $snapshot = self::deviceClient()->refresh($followed['host'], $followed['port'], $this->knownDeviceContext());
+            }
+        }
+        $summary = self::registerSnapshot($snapshot);
         $this->setConfiguration('offline_retry_failures', 0);
+        if ($inventoryDue && isset($summary['id'])) {
+            // Persister sur l'objet canonique que registerSnapshot vient de sauver
+            // (byDeviceId) : setConfiguration seul ne survit pas au poll suivant,
+            // sinon l'inventaire complet repart à chaque cycle au lieu d'une fois par jour.
+            $canonical = self::byId($summary['id']);
+            if (is_object($canonical)) {
+                $canonical->setConfiguration('last_inventory_refresh', time());
+                $canonical->save(true);
+            }
+        }
         return $snapshot;
+    }
+
+    /**
+     * Décision pure d'inventaire grow-only (upstream #851) : réservé à l'équipement
+     * parent, désactivable (intervalle <= 0), et borné par un intervalle en secondes.
+     */
+    public static function inventoryRefreshDecision($interval, $lastRefresh, $now, $isSubdevice)
+    {
+        if ($isSubdevice) {
+            return false;
+        }
+        $interval = (int) $interval;
+        if ($interval <= 0) {
+            return false;
+        }
+        return ((int) $now - (int) $lastRefresh) >= $interval;
+    }
+
+    /** L'inventaire grow-only est-il dû pour cet équipement (parent, intervalle écoulé) ? */
+    private function inventoryRefreshDue()
+    {
+        $isSubdevice = trim((string) $this->getConfiguration('subdevice_uuid', '')) !== '';
+        $interval = (int) config::byKey('inventoryRefreshInterval', __CLASS__, 86400);
+        $last = (int) $this->getConfiguration('last_inventory_refresh', 0);
+        return self::inventoryRefreshDecision($interval, $last, time(), $isSubdevice);
+    }
+
+    /**
+     * Suit un appareil dont le bail DHCP a changé : redécouverte par di sur le LAN
+     * (multicast toute IPv4), met à jour host/port et retourne la nouvelle adresse.
+     * Retourne null si di inconnu ou appareil non retrouvé (l'appelant marque offline).
+     * di jamais journalisé ; aucune commande ni personnalisation n'est touchée.
+     * @return array{host:string,port:int}|null
+     */
+    private function followDeviceByDi($currentHost, $currentPort)
+    {
+        $di = trim((string) $this->getConfiguration('ocf_di', ''));
+        if ($di === '') {
+            return null;
+        }
+        $logger = function ($level, $message) {
+            log::add(__CLASS__, $level, $message);
+        };
+        try {
+            $found = (new LocalThingsOcfDiagnostic($currentHost))->discoverHostByDi($di, $logger);
+        } catch (LocalThingsDiscoveryCancelled $cancel) {
+            throw $cancel;
+        } catch (Throwable $error) {
+            return null;
+        }
+        if (!is_array($found) || empty($found['ip'])) {
+            return null;
+        }
+        $newHost = (string) $found['ip'];
+        $ports = isset($found['ports']) ? (array) $found['ports'] : array();
+        $newPort = $ports ? (int) $ports[0] : (int) $currentPort;
+        if ($newHost !== $currentHost || $newPort !== (int) $currentPort) {
+            $this->setConfiguration('host', $newHost);
+            $this->setConfiguration('port', $newPort);
+            $this->save(true);
+            log::add(__CLASS__, 'info', sprintf(
+                __('[Suivi IP] %1$s : adresse mise à jour par redécouverte di (bail DHCP changé)', __FILE__),
+                $this->getHumanName()
+            ));
+        }
+        return array('host' => $newHost, 'port' => $newPort);
     }
 
     /**

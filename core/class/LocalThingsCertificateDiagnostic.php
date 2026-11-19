@@ -46,6 +46,8 @@ class LocalThingsCertificateDiagnostic
     private $rootCaPath;
     private $logger;
     private $sourcePortResolver;
+    /** @var array<int,string>|null Cache des autorités racines acceptées (diagnostic, public). */
+    private $acceptableCaNames = null;
 
     /**
      * @param string $openssl Chemin du binaire OpenSSL.
@@ -179,6 +181,19 @@ class LocalThingsCertificateDiagnostic
             $result['handshake'] = $preparation
                 ? 'non exécuté'
                 : (self::isCertificateRejection($error) ? 'refused (unknown_ca)' : 'failed');
+            if (!$preparation && self::isCertificateRejection($error)) {
+                // Surfacer les autorités racines que l'appareil accepte (upstream #520).
+                // Sonde best-effort isolée : son échec ne doit pas interrompre tout le
+                // diagnostic ; utiliser la suite qui a négocié (sinon « no shared cipher »
+                // sur un serveur RSA). L'annulation, elle, reste propagée.
+                try {
+                    $result['acceptable_ca'] = $this->probeAcceptableCas($host, $port, $cipher);
+                } catch (LocalThingsDiscoveryCancelled $cancel) {
+                    throw $cancel;
+                } catch (Throwable $probeError) {
+                    $result['acceptable_ca'] = array();
+                }
+            }
             $this->log('info', '[Certificat comparatif] ' . $label . ' : ' . $result['handshake']
                 . ' ; ' . self::failureKind($error));
         } finally {
@@ -305,6 +320,121 @@ class LocalThingsCertificateDiagnostic
     private static function failureKind(Throwable $error)
     {
         return LocalThingsOcfOnboardingDiagnostic::failureKind($error);
+    }
+
+    /**
+     * Extrait les autorités racines acceptées par l'appareil depuis la sortie
+     * s_client (« Acceptable client certificate CA names », upstream #520). Pur et
+     * testable ; ces noms sont publics (ni certificat, ni clé, ni UUID).
+     *
+     * @param string $output Sortie combinée stdout/stderr de OpenSSL s_client.
+     * @return array<int,string> Noms distincts (DN), bornés en nombre et en longueur.
+     */
+    public static function extractAcceptableCaNames($output)
+    {
+        $lines = preg_split('/\r\n|\r|\n/', (string) $output);
+        $names = array();
+        $capture = false;
+        foreach ($lines as $line) {
+            $trim = trim($line);
+            if (!$capture) {
+                if (stripos($trim, 'Acceptable client certificate CA names') !== false) {
+                    $capture = true;
+                }
+                continue;
+            }
+            if ($trim === ''
+                || preg_match('/^(Client Certificate Types|Requested Signature Algorithms|Shared Requested Signature Algorithms|---|SSL handshake|New,|Cipher\s|Protocol\s|Server public key|Secure Renegotiation|Compression|TLS session|Certificate chain|Subject:|Issuer:)/i', $trim)
+            ) {
+                break;
+            }
+            // Une ligne DN porte des paires attribut=valeur (ex. « C = KR, CN = … »).
+            if (strpos($trim, '=') === false && strpos($trim, '/') !== 0) {
+                break;
+            }
+            $name = substr($trim, 0, 200);
+            if (!in_array($name, $names, true)) {
+                $names[] = $name;
+            }
+            if (count($names) >= 12) {
+                break;
+            }
+        }
+        return $names;
+    }
+
+    /**
+     * Sonde lecture seule best-effort : session sans identité cliente pour recevoir
+     * le CertificateRequest et sa liste d'autorités racines. N'altère pas le chemin
+     * de handshake de production (s_client distinct, borné, sans écriture OCF).
+     *
+     * @param string $host Adresse IPv4 validée.
+     * @param int $port Port DTLS.
+     * @param string $cipher Suite ayant négocié (évite « no shared cipher » sur un serveur RSA).
+     * @return array<int,string>
+     */
+    private function probeAcceptableCas($host, $port, $cipher = '')
+    {
+        if ($this->acceptableCaNames !== null && $this->acceptableCaNames !== array()) {
+            return $this->acceptableCaNames;
+        }
+        $cipher = $cipher !== '' ? $cipher : self::CIPHERS[0];
+        $command = array(
+            $this->openssl, 's_client', '-dtls1_2',
+            '-connect', $host . ':' . (int) $port,
+            '-bind', '0.0.0.0:' . $this->sourcePort($host),
+            '-CAfile', $this->rootCaPath,
+            '-cipher', $cipher,
+            '-mtu', '1200', '-no_ign_eof',
+        );
+        $descriptor = array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w'));
+        $process = @proc_open($command, $descriptor, $pipes, null, null, array('suppress_errors' => true, 'bypass_shell' => true));
+        if (!is_resource($process)) {
+            return array();
+        }
+        foreach ($pipes as $pipe) {
+            stream_set_blocking($pipe, false);
+        }
+        $output = '';
+        $deadline = microtime(true) + 4.0;
+        try {
+            while (microtime(true) < $deadline) {
+                if (class_exists('LocalThingsDiscovery', false)) {
+                    LocalThingsDiscovery::checkpoint(true);
+                }
+                foreach (array(1, 2) as $index) {
+                    $chunk = @fread($pipes[$index], 8192);
+                    if (is_string($chunk) && $chunk !== '') {
+                        $output .= $chunk;
+                    }
+                }
+                if (stripos($output, 'Acceptable client certificate CA names') !== false
+                    && preg_match('/Client Certificate Types|Requested Signature Algorithms/i', $output)) {
+                    break;
+                }
+                $status = proc_get_status($process);
+                if (!$status['running']) {
+                    break;
+                }
+                usleep(50000);
+            }
+        } finally {
+            proc_terminate($process);
+            foreach ($pipes as $pipe) {
+                if (is_resource($pipe)) {
+                    fclose($pipe);
+                }
+            }
+            proc_close($process);
+        }
+        $names = self::extractAcceptableCaNames($output);
+        if ($names) {
+            // Ne cacher qu'un résultat non vide : une sonde vide (timeout, suite
+            // inadaptée) doit pouvoir être retentée avec une autre suite.
+            $this->acceptableCaNames = $names;
+            $this->log('info', '[Certificat comparatif] autorités racines acceptées : ' . implode(' | ', $names));
+        }
+        return $names;
     }
 
     /**

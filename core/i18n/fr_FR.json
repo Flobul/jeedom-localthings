@@ -96,7 +96,10 @@
         "La réponse /device/0 est invalide": "La réponse /device/0 est invalide",
         "La réponse /device/0 ne contient aucune ressource": "La réponse /device/0 ne contient aucune ressource",
         "[CBOR] /device/0 décodé : %d ressources": "[CBOR] /device/0 décodé : %d ressources",
-        "Cet appareil utilise un transport PSK : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour le piloter.": "Cet appareil utilise un transport PSK : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour le piloter."
+        "Cet appareil utilise un transport PSK : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour le piloter.": "Cet appareil utilise un transport PSK : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour le piloter.",
+        "Certificat client legacy introuvable.": "Certificat client legacy introuvable.",
+        "Aucun jeton d’appareil legacy obtenu (appareil endormi ou callback 8889 injoignable). Un jeton peut être importé manuellement.": "Aucun jeton d’appareil legacy obtenu (appareil endormi ou callback 8889 injoignable). Un jeton peut être importé manuellement.",
+        "Appareil legacy": "Appareil legacy"
     },
     "plugins/localthings/core/class/LocalThingsDtlsProbe.php": {
         "Adresse d’écoute UDP invalide": "Adresse d’écoute UDP invalide",
@@ -446,7 +449,19 @@
         "État du lave-linge": "État du lave-linge",
         "Éteindre": "Éteindre",
         "énergie": "énergie",
-        "état": "état"
+        "état": "état",
+        "Volume du canal": "Volume du canal",
+        "Mode sonore": "Mode sonore",
+        "Caisson de basses": "Caisson de basses",
+        "Aigus": "Aigus",
+        "Basses": "Basses",
+        "Lecture": "Lecture",
+        "Lecture média": "Lecture média",
+        "Contrôle de piste": "Contrôle de piste",
+        "Piste audio": "Piste audio",
+        "Mode d’image": "Mode d’image",
+        "Chaîne": "Chaîne",
+        "Type de connexion Bluetooth": "Type de connexion Bluetooth"
     },
     "plugins/localthings/core/class/LocalThingsOcfDiagnostic.php": {
         "Adresse OCF invalide": "Adresse OCF invalide",
@@ -759,7 +774,16 @@
         "Commandes configurées": "Commandes configurées",
         "Équipements actifs": "Équipements actifs",
         "Tâche de rafraîchissement introuvable": "Tâche de rafraîchissement introuvable",
-        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Tâche de rafraîchissement introuvable, réinstallez le plugin"
+        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Tâche de rafraîchissement introuvable, réinstallez le plugin",
+        "[Suivi IP] %1$s : adresse mise à jour par redécouverte di (bail DHCP changé)": "[Suivi IP] %1$s : adresse mise à jour par redécouverte di (bail DHCP changé)",
+        "DTLS (OCF sécurisé)": "DTLS (OCF sécurisé)",
+        "Legacy 8888 (pré-DTLS)": "Legacy 8888 (pré-DTLS)",
+        "CoAP public (lecture seule)": "CoAP public (lecture seule)",
+        "Ni DTLS, ni 8888, ni CoAP": "Ni DTLS, ni 8888, ni CoAP",
+        "Type de connexion — DTLS": "Type de connexion — DTLS",
+        "Type de connexion — Legacy 8888": "Type de connexion — Legacy 8888",
+        "Type de connexion — CoAP public": "Type de connexion — CoAP public",
+        "Type de connexion — Ni DTLS, ni 8888, ni CoAP": "Type de connexion — Ni DTLS, ni 8888, ni CoAP"
     },
     "plugins/localthings/core/template/dashboard/localthings.device.template.html": {
         "Actions": "Actions",
@@ -1004,7 +1028,12 @@
         "inconnu": "inconnu",
         "Équipement": "Équipement",
         "État": "État",
-        "OwnerPSK (32 caractères hexadécimaux)": "OwnerPSK (32 caractères hexadécimaux)"
+        "OwnerPSK (32 caractères hexadécimaux)": "OwnerPSK (32 caractères hexadécimaux)",
+        "Pour obtenir une clé utilisable": "Pour obtenir une clé utilisable",
+        "Utilisez la sauvegarde du téléphone qui a appairé l’appareil (pas un autre téléphone) et une sauvegarde chiffrée : le dossier Security n’est présent que dans ce cas.": "Utilisez la sauvegarde du téléphone qui a appairé l’appareil (pas un autre téléphone) et une sauvegarde chiffrée : le dossier Security n’est présent que dans ce cas.",
+        "Fichier à extraire : Library/Security/oic_svr_db_client.dat (fileID f838d92e… dans la sauvegarde). Un outil comme iphone_backup_decrypt extrait les sauvegardes chiffrées.": "Fichier à extraire : Library/Security/oic_svr_db_client.dat (fileID f838d92e… dans la sauvegarde). Un outil comme iphone_backup_decrypt extrait les sauvegardes chiffrées.",
+        "Si aucune clé n’est utilisable (entrées credtype 8 = trust_ca), ré-appairez l’appareil via Easy Connect / code PIN (oxm 1) dans SmartThings, puis refaites une sauvegarde chiffrée.": "Si aucune clé n’est utilisable (entrées credtype 8 = trust_ca), ré-appairez l’appareil via Easy Connect / code PIN (oxm 1) dans SmartThings, puis refaites une sauvegarde chiffrée.",
+        "Type de connexion": "Type de connexion"
     },
     "plugins/localthings/plugin_info/configuration.php": {
         "1 heure": "1 heure",
@@ -1053,5 +1082,31 @@
         "Version": "Version",
         "min": "min",
         "État": "État"
+    },
+    "plugins/localthings/core/class/LocalThingsLegacyProbe.php": {
+        "Aucune interface locale détectée sur ": "Aucune interface locale détectée sur ",
+        " (ni DTLS/OCF, ni legacy 8888). Cet appareil est probablement pilotable uniquement via le cloud SmartThings et ne peut pas être ajouté en local.": " (ni DTLS/OCF, ni legacy 8888). Cet appareil est probablement pilotable uniquement via le cloud SmartThings et ne peut pas être ajouté en local."
+    },
+    "plugins/localthings/core/class/LocalThingsLegacyClient.php": {
+        "Aucun jeton d’appareil legacy disponible ; appairage requis.": "Aucun jeton d’appareil legacy disponible ; appairage requis.",
+        "Jeton d’appareil legacy refusé (401).": "Jeton d’appareil legacy refusé (401).",
+        "Contrôle à distance désactivé sur l’appareil legacy (SHE-001).": "Contrôle à distance désactivé sur l’appareil legacy (SHE-001).",
+        "Erreur HTTP legacy : ": "Erreur HTTP legacy : ",
+        "Réponse legacy illisible (JSON attendu).": "Réponse legacy illisible (JSON attendu).",
+        "Cet appareil legacy (8888) n’accepte que TLS 1.0, non supporté par la bibliothèque SSL de ce serveur (OpenSSL récent). Le pilotage local legacy nécessite un hôte Jeedom dont OpenSSL autorise encore TLS 1.0.": "Cet appareil legacy (8888) n’accepte que TLS 1.0, non supporté par la bibliothèque SSL de ce serveur (OpenSSL récent). Le pilotage local legacy nécessite un hôte Jeedom dont OpenSSL autorise encore TLS 1.0.",
+        "Connexion legacy TLS 1.0 impossible vers le pont 8888.": "Connexion legacy TLS 1.0 impossible vers le pont 8888.",
+        "Impossible de créer un fichier temporaire pour le certificat legacy.": "Impossible de créer un fichier temporaire pour le certificat legacy."
+    },
+    "plugins/localthings/core/class/LocalThingsLegacyToken.php": {
+        "Impossible d’ouvrir l’écouteur de callback legacy 8889.": "Impossible d’ouvrir l’écouteur de callback legacy 8889.",
+        "Adresse de callback locale introuvable pour l’appareil legacy.": "Adresse de callback locale introuvable pour l’appareil legacy.",
+        "Impossible de créer un fichier temporaire pour le jeton legacy.": "Impossible de créer un fichier temporaire pour le jeton legacy."
+    },
+    "plugins/localthings/core/class/LocalThingsLegacySecret.php": {
+        "Identifiant d’appareil legacy invalide": "Identifiant d’appareil legacy invalide",
+        "Stockage legacy inaccessible": "Stockage legacy inaccessible",
+        "Permissions legacy non garanties": "Permissions legacy non garanties",
+        "Préparation du stockage legacy impossible": "Préparation du stockage legacy impossible",
+        "Enregistrement legacy impossible": "Enregistrement legacy impossible"
     }
 }
