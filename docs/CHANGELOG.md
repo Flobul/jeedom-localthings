@@ -1,6 +1,11 @@
 # Changelog
 ## Non publié
 
+## Version 0.8.8 (19/11/2026)
+
+- Import OwnerPSK plus fiable sur les lave-linge et sèche-linge PSK : le transport ouvre une association fraîche (port source éphémère, socket non connectée qui épingle le port de réponse réel) et retente une fois après re-découverte du port annoncé en cas de timeout, au lieu d’échouer sur un port périmé ou une association résiduelle.
+- La découverte prouve le transport PSK avec une sonde à clé jetable avant de tenter un handshake certificat complet (qui pouvait bloquer les appareils PSK-only), puis propose l’import OwnerPSK ; le diagnostic de reconnexion classe correctement les timeouts OwnerPSK.
+
 ## Version 0.8.7 (18/11/2026)
 
 - Correction d’une régression de la vérification OwnerPSK qui quittait la lecture RPC avant la réponse différée du moteur DTLS et finissait systématiquement par `ownerpsk_rpc_timeout`.

@@ -278,7 +278,7 @@
   function ownerPskGuidance(errors) {
     const messages = Array.isArray(errors) ? errors.map(String) : [];
     const relevant = messages.some(function (message) {
-      return /unknown_ca|unknown ca|timeout|timed out|délai dépassé/i.test(message);
+      return /unknown_ca|unknown ca|timeout|timed out|délai dépassé|ownerpsk|transport psk/i.test(message);
     });
     if (!relevant) return false;
 
@@ -567,7 +567,7 @@
           "{{Déjà associé}} : " + state(result.owned),
           "{{Opérationnel}} : " + state(result.operational),
           "{{Méthode OTM sélectionnée}} : " + (result.oxm == null ? "{{inconnue}}" : result.oxm),
-          "{{Sonde PSK (premier échange uniquement)}} : " + result.psk_probe,
+          "{{Sonde PSK (premier échange uniquement)}} : " + result.psk_probe + " · carrier=" + (result.psk_carrier || "?") + (result.psk_carrier_outcome ? " (" + result.psk_carrier_outcome + ")" : ""),
           "{{Clé locale enregistrée}} : " + state(result.credential_installed),
           result.message
         ].join("\n");

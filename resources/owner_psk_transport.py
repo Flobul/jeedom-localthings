@@ -3,6 +3,7 @@
 import base64
 import ipaddress
 import json
+import re
 import select
 import socket
 import sys
@@ -10,6 +11,7 @@ import time
 
 try:
     from vendor.smartthings_local_dtls import (
+        DtlsError,
         DtlsPskClient,
         WantRead,
         ZeroReturn,
@@ -39,10 +41,17 @@ class Transport:
             raise ValueError('invalid port')
 
         self.engine = DtlsPskClient(identity=identity, key=key, mtu=MTU)
+        self.host = host
+        # Socket non connecté : un socket UDP connecté jette silencieusement toute
+        # réponse dont le port source diffère du port composé. La pile OCF Samsung
+        # peut répondre depuis son propre socket éphémère (upstream #66 / 0.1.14),
+        # ce qui se traduisait par un timeout de handshake. On épingle le premier
+        # répondeur, comme le relais UDP certificat le fait pour le port 5684.
+        self.peer = (host, port)
+        self.pinned = False
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             self.sock.bind(('0.0.0.0', source_port))
-            self.sock.connect((host, port))
             self.sock.setblocking(False)
         except Exception:
             self.sock.close()
@@ -50,6 +59,7 @@ class Transport:
             raise
 
     def _flush(self, deadline):
+        assert self.sock is not None and self.engine is not None
         while True:
             try:
                 datagram = self.engine.bio_read(MAX_FRAME_BYTES)
@@ -59,9 +69,7 @@ class Transport:
                 continue
             while True:
                 try:
-                    written = self.sock.send(datagram)
-                    if written != len(datagram):
-                        raise RuntimeError('partial DTLS datagram')
+                    self.sock.sendto(datagram, self.peer)
                     break
                 except BlockingIOError:
                     remaining = deadline - time.monotonic()
@@ -69,35 +77,53 @@ class Transport:
                         raise TimeoutError('DTLS send timeout')
                     select.select([], [self.sock], [], remaining)
 
+    def _drain(self):
+        """Feed the first acceptable datagram and pin the responder port."""
+        assert self.sock is not None and self.engine is not None
+        while True:
+            try:
+                datagram, addr = self.sock.recvfrom(MAX_FRAME_BYTES)
+            except BlockingIOError:
+                return False
+            if not datagram or addr[0] != self.host:
+                continue
+            if self.pinned and addr != self.peer:
+                continue
+            if not self.pinned:
+                self.peer = addr
+                self.pinned = True
+            self.engine.bio_write(datagram)
+            return True
+
     def _wait(self, deadline):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError('DTLS timeout')
+        assert self.sock is not None and self.engine is not None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('DTLS timeout')
 
-        engine_timeout = self.engine.DTLSv1_get_timeout()
-        wait_timeout = remaining
-        if engine_timeout is not None:
-            wait_timeout = min(wait_timeout, max(0.0, engine_timeout))
+            engine_timeout = self.engine.DTLSv1_get_timeout()
+            wait_timeout = remaining
+            if engine_timeout is not None:
+                wait_timeout = min(wait_timeout, max(0.0, engine_timeout))
 
-        readable, _, _ = select.select([self.sock], [], [], wait_timeout)
-        if readable:
-            datagram = self.sock.recv(MAX_FRAME_BYTES)
-            if datagram:
-                self.engine.bio_write(datagram)
-            return
+            readable, _, _ = select.select([self.sock], [], [], wait_timeout)
+            if readable and self._drain():
+                return
 
-        engine_timeout = self.engine.DTLSv1_get_timeout()
-        if engine_timeout is not None and engine_timeout <= 0:
-            self.engine.DTLSv1_handle_timeout()
-            self._flush(deadline)
+            engine_timeout = self.engine.DTLSv1_get_timeout()
+            if engine_timeout is not None and engine_timeout <= 0:
+                self.engine.DTLSv1_handle_timeout()
+                self._flush(deadline)
 
     def connect(self, timeout):
+        assert self.sock is not None and self.engine is not None
         deadline = time.monotonic() + timeout
         while True:
             try:
                 self.engine.do_handshake()
                 self._flush(deadline)
-                return
+                return {'source_port': self.sock.getsockname()[1]}
             except WantRead:
                 self._flush(deadline)
                 self._wait(deadline)
@@ -139,6 +165,108 @@ class Transport:
             self.sock = None
 
 
+def psk_probe(host, port, timeout=3.0):
+    """Preuve du carrier PSK avec une identité/clé jetables, jamais un vrai secret.
+
+    Un appareil PSK-only négocie ECDHE-PSK puis rejette l'identité inconnue
+    (alerte fatale 115) ou la mauvaise clé (alerte 20/51) : le carrier est PSK.
+    Un appareil à certificat rejette le ClientHello PSK-only (alerte 40) ou reste
+    silencieux. Ce handshake complet est bien moins coûteux qu'un échange
+    certificat complet, qui peut wedger un lave-linge PSK-only (upstream #504/#852).
+    Aucune clé ni identité n'est renvoyée ni journalisée.
+    """
+    ipaddress.IPv4Address(host)
+    if not 1 <= port <= 65535:
+        raise ValueError('invalid port')
+    engine = DtlsPskClient(identity=b'diagnostic-probe', key=bytes(16), mtu=MTU)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(('0.0.0.0', 0))
+    sock.setblocking(False)
+    peer = (host, port)
+    pinned = False
+    deadline = time.monotonic() + max(.2, float(timeout))
+    outcome = 'no_response'
+    alert = None
+    carrier = 'unknown'
+
+    def flush():
+        while True:
+            try:
+                datagram = engine.bio_read(MAX_FRAME_BYTES)
+            except WantRead:
+                return
+            if not datagram:
+                continue
+            try:
+                sock.sendto(datagram, peer)
+            except BlockingIOError:
+                return
+
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                outcome = 'timeout'
+                break
+            try:
+                engine.do_handshake()
+                outcome = 'connected'
+                carrier = 'psk'
+                break
+            except WantRead:
+                pass
+            except DtlsError as error:
+                match = re.search(r'fatal alert (\d+)', str(error))
+                if match:
+                    alert = int(match.group(1))
+                    if alert == 115:
+                        outcome, carrier = 'unknown_psk_identity', 'psk'
+                    elif alert in (20, 51):
+                        outcome, carrier = 'bad_psk', 'psk'
+                    elif alert == 40:
+                        outcome = 'handshake_failure'
+                    elif alert == 48:
+                        outcome = 'unknown_ca'
+                    else:
+                        outcome = 'alert_%d' % alert
+                elif 'unexpected ciphersuite' in str(error):
+                    outcome = 'unexpected_ciphersuite'
+                elif 'Finished did not verify' in str(error):
+                    # Le serveur a négocié ECDHE-PSK et engagé l'échange : carrier PSK
+                    # prouvé même si la clé jetable ne correspond pas.
+                    outcome, carrier = 'bad_psk', 'psk'
+                else:
+                    outcome = 'dtls_error'
+                break
+            flush()
+            engine_timeout = engine.DTLSv1_get_timeout()
+            wait_timeout = remaining if engine_timeout is None else min(remaining, max(0.0, engine_timeout))
+            readable, _, _ = select.select([sock], [], [], wait_timeout)
+            if readable:
+                while True:
+                    try:
+                        datagram, addr = sock.recvfrom(MAX_FRAME_BYTES)
+                    except BlockingIOError:
+                        break
+                    if not datagram or addr[0] != host:
+                        continue
+                    if pinned and addr != peer:
+                        continue
+                    if not pinned:
+                        peer = addr
+                        pinned = True
+                    engine.bio_write(datagram)
+                    break
+            engine_timeout = engine.DTLSv1_get_timeout()
+            if engine_timeout is not None and engine_timeout <= 0:
+                engine.DTLSv1_handle_timeout()
+                flush()
+        return {'carrier': carrier, 'outcome': outcome, 'alert': alert,
+                'source_port': sock.getsockname()[1]}
+    finally:
+        sock.close()
+
+
 def check_transport():
     # Embedded NUL bytes are the capability this engine must preserve.
     identity = b'\x37\x71\xf8\xbf\x00\x00\x3a\x2d\xd8\x85\xe4\xc9\x81\x87\x36\xd2'
@@ -169,8 +297,11 @@ def main():
                     bytes.fromhex(request['identity']),
                     bytes.fromhex(request['key']),
                 )
-                transport.connect(max(.1, min(30, float(request['timeout']))))
+                result = transport.connect(max(.1, min(30, float(request['timeout']))))
                 request.clear()
+            elif action == 'psk_probe':
+                result = psk_probe(request['host'], int(request['port']),
+                                   max(.2, min(10, float(request.get('timeout', 3)))))
             elif action == 'write':
                 if not transport:
                     raise ValueError('not connected')
@@ -189,7 +320,7 @@ def main():
             print(json.dumps({'ok': True, 'result': result}), flush=True)
     except Exception as error:
         # Protocol, JSON and credential errors must never expose their values.
-        safe_action = action if action in ('connect', 'write', 'read', 'close') else 'request'
+        safe_action = action if action in ('connect', 'write', 'read', 'close', 'psk_probe') else 'request'
         suffix = '_timeout' if isinstance(error, TimeoutError) else '_failed'
         print(json.dumps({
             'ok': False,

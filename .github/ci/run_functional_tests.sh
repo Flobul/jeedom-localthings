@@ -55,7 +55,7 @@ run_test "UDP relay and DTLS peer pinning" php .github/ci/functional/udp_relay_t
 run_test "Discovery lifecycle and error recovery" run_discovery_test
 run_test "LocalThings daemon IPC lifecycle" php .github/ci/functional/daemon_ipc_test.php
 run_test "OwnerPSK accepts 16-byte and 32-byte keys" python3 .github/ci/functional/owner_psk_credential_test.py
-run_test "OwnerPSK transport uses a valid deterministic source port" php .github/ci/functional/owner_psk_transport_test.php
+run_test "OwnerPSK transport uses a fresh source port per association" php .github/ci/functional/owner_psk_transport_test.php
 run_test "OwnerPSK import remains discoverable after handshake timeout" python3 .github/ci/functional/owner_psk_timeout_ux_test.py
 run_test "OwnerPSK credentials are extracted from the nested iPhone CBOR store" php .github/ci/functional/owner_psk_database_test.php
 run_test "OwnerPSK iPhone import UI is wired end to end" python3 .github/ci/functional/owner_psk_import_ui_test.py

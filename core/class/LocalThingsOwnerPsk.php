@@ -117,11 +117,11 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
             throw new InvalidArgumentException(__('Endpoint OwnerPSK invalide', __FILE__));
         }
         $this->host = $host; $this->port = (int) $port;
-        $address = ip2long($host);
-        if ($address === false) {
-            throw new InvalidArgumentException(__('Adresse OwnerPSK invalide', __FILE__));
-        }
-        $this->localPort = 40000 + (($address & 0xffff) % 20000);
+        // Port source éphémère (bind 0) : chaque nouvelle association DTLS utilise un
+        // 4-tuple frais, ce qui évite qu'un appareil Samsung conserve une association
+        // résiduelle sur un port source fixe et ignore le ClientHello suivant (timeout).
+        // Le port réellement lié est rapporté par le helper après le bind (upstream #66/#77).
+        $this->localPort = 0;
         $this->credential = call_user_func(array('LocalThingsOwnerPsk', 'validate'), $credential);
     }
 
@@ -134,10 +134,11 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
         if (!is_resource($this->process)) { throw new RuntimeException(__('Transport OwnerPSK indisponible (Python 3 et libssl requis)', __FILE__)); }
         stream_set_blocking($this->pipes[1], false);
         try {
-            $this->rpc(array('action' => 'connect', 'host' => $this->host, 'port' => $this->port,
+            $connectResult = $this->rpc(array('action' => 'connect', 'host' => $this->host, 'port' => $this->port,
                 'source_port' => $this->localPort,
                 'identity' => bin2hex(LocalThingsOwnerPsk::uuidBytes($this->credential['owner_uuid'])),
                 'key' => $this->credential['key'], 'timeout' => $timeout), $timeout + 2);
+            $this->adoptReportedSourcePort($connectResult);
             // Verify the device binding before exposing this session to normal reads/writes.
             $session = new LocalThingsSession($this);
             list($code, $payload) = $session->get('/oic/d', 8.0);
@@ -207,6 +208,63 @@ class LocalThingsOwnerPskTransport extends LocalThingsDtlsClient
     }
     public function errorSummary() { return 'Transport OwnerPSK'; }
     public function localPort() { return (int) $this->localPort; }
+
+    /** Adopte le port source réellement lié par le helper (bind éphémère) pour les journaux. */
+    private function adoptReportedSourcePort($result)
+    {
+        if (is_array($result) && isset($result['source_port'])) {
+            $this->localPort = (int) $result['source_port'];
+        }
+    }
+
+    /**
+     * Sonde de carrier PSK à identité/clé jetables : prouve qu'un appareil parle
+     * ECDHE-PSK (alerte 115/20/51) sans tenter un handshake certificat complet,
+     * qui peut wedger un lave-linge PSK-only (upstream #504/#852). Aucun secret
+     * réel n'est utilisé ni journalisé.
+     *
+     * @param string $host Adresse IPv4 cible.
+     * @param int $port Port DTLS à sonder.
+     * @param float $timeout Délai maximal de la sonde.
+     * @return array<string,mixed> carrier (psk|unknown), outcome, alerte éventuelle.
+     */
+    public static function probeCarrier($host, $port, $timeout = 3.0)
+    {
+        $unknown = array('carrier' => 'unknown', 'outcome' => 'unavailable', 'alert' => null);
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || $port < 1 || $port > 65535) {
+            return array('carrier' => 'unknown', 'outcome' => 'invalid_target', 'alert' => null);
+        }
+        $timeout = max(.2, min(10.0, (float) $timeout));
+        $process = proc_open(array('python3', __DIR__ . '/../../resources/owner_psk_transport.py'),
+            array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('file', '/dev/null', 'w')),
+            $pipes, null, null, array('bypass_shell' => true));
+        if (!is_resource($process)) { return $unknown; }
+        try {
+            stream_set_blocking($pipes[1], false);
+            $request = json_encode(array('action' => 'psk_probe', 'host' => $host, 'port' => (int) $port,
+                'timeout' => $timeout), JSON_UNESCAPED_SLASHES) . "\n";
+            fwrite($pipes[0], $request); fflush($pipes[0]);
+            $deadline = microtime(true) + $timeout + 2.0; $response = '';
+            while (microtime(true) < $deadline) {
+                $chunk = stream_get_contents($pipes[1]);
+                if ($chunk !== false && $chunk !== '') { $response .= $chunk; }
+                if (strpos($response, "\n") !== false) {
+                    $decoded = json_decode($response, true);
+                    if (is_array($decoded) && !empty($decoded['ok']) && is_array($decoded['result'] ?? null)) {
+                        return $decoded['result'];
+                    }
+                    return $unknown;
+                }
+                $status = @proc_get_status($process);
+                if ((!is_array($status) || empty($status['running'])) && feof($pipes[1])) { break; }
+                usleep(10000);
+            }
+            return array('carrier' => 'unknown', 'outcome' => 'timeout', 'alert' => null);
+        } finally {
+            foreach ($pipes as $pipe) { if (is_resource($pipe)) { fclose($pipe); } }
+            @proc_terminate($process); @proc_close($process);
+        }
+    }
     public function isConnected()
     {
         if (!is_resource($this->process)) { return false; }

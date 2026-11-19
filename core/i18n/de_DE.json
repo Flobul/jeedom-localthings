@@ -95,7 +95,8 @@
         "GET /device/0 a répondu %s": "GET /device/0 hat %s zurückgegeben",
         "La réponse /device/0 est invalide": "Die Antwort /device/0 ist ungültig",
         "La réponse /device/0 ne contient aucune ressource": "Die Antwort von /device/0 enthält keine Ressourcen",
-        "[CBOR] /device/0 décodé : %d ressources": "[CBOR] /device/0 dekodiert: %d Ressourcen"
+        "[CBOR] /device/0 décodé : %d ressources": "[CBOR] /device/0 dekodiert: %d Ressourcen",
+        "Cet appareil utilise un transport PSK : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour le piloter.": "Dieses Gerät verwendet einen PSK-Transport: Importieren Sie einen OwnerPSK-Schlüssel aus dem iPhone/iPad-Backup, um es zu steuern."
     },
     "plugins/localthings/core/class/LocalThingsDtlsProbe.php": {
         "Adresse d’écoute UDP invalide": "Ungültige UDP-Empfangsadresse",

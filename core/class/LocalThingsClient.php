@@ -113,6 +113,17 @@ class LocalThingsDeviceClient
     {
         $started = microtime(true);
         LocalThingsDiscovery::checkpoint();
+        // Preuve du carrier PSK avant tout handshake certificat complet : un appareil
+        // PSK-only ignore le ClientHello certificat et peut wedger (upstream #504/#852).
+        // Une identité/clé jetables obtiennent l'alerte ECDHE-PSK sans secret réel.
+        if ($this->ownerPskCredential($host) === null) {
+            $carrier = LocalThingsOwnerPskTransport::probeCarrier($host, $port, 2.0);
+            if (($carrier['carrier'] ?? 'unknown') === 'psk') {
+                $this->log('info', '[DTLS] Carrier PSK prouvé hôte=' . $host . ' port=' . $port
+                    . ' résultat=' . ($carrier['outcome'] ?? '?') . ' ; aucun handshake certificat tenté');
+                throw new RuntimeException(__('Cet appareil utilise un transport PSK : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour le piloter.', __FILE__));
+            }
+        }
         try {
             $snapshot = $this->readSnapshot($host, $port, $exhaustive ? 5.0 : $handshakeTimeout, true);
         } catch (LocalThingsClientCertificateRejected $error) {
@@ -208,7 +219,22 @@ class LocalThingsDeviceClient
     {
         $host = $this->validateHost($host);
         return $this->withHostLockFor($host, function () use ($host) {
-            $port = $this->certificateDiagnosticPort($host);
+            $port = $this->certificateDiagnosticPort($host, null, true);
+            $carrier = LocalThingsOwnerPskTransport::probeCarrier($host, $port, 3.0);
+            $installed = $this->ownerPskCredential($host) !== null;
+            // Carrier PSK prouvé : aucun handshake certificat, même en lecture seule,
+            // car il peut wedger un appareil PSK-only (H4, upstream #504/#852).
+            if (($carrier['carrier'] ?? 'unknown') === 'psk') {
+                $this->log('info', '[OwnerPSK] port=' . $port . ' ; carrier=psk (' . ($carrier['outcome'] ?? '?')
+                    . ') ; clé installée=' . ($installed ? 'oui' : 'non') . ' ; aucun handshake certificat ; aucune écriture OCF');
+                return array('port' => $port, 'owned' => null, 'operational' => null, 'oxm' => null,
+                    'psk_probe' => 'carrier_psk', 'psk_carrier' => 'psk',
+                    'psk_carrier_outcome' => $carrier['outcome'] ?? null,
+                    'credential_installed' => $installed, 'association_available' => false,
+                    'message' => $installed
+                        ? 'Transport PSK détecté ; une clé OwnerPSK est déjà enregistrée pour cet hôte. Aucun propriétaire modifié.'
+                        : 'Transport PSK détecté : importez une clé OwnerPSK depuis la sauvegarde iPhone/iPad pour piloter cet appareil. Aucun handshake certificat tenté, aucun propriétaire modifié.');
+            }
             $transport = new LocalThingsDtlsClient($this->openssl, $host, $port, self::sourcePort($host),
                 '', '', '', $this->rootCaPath, null, true);
             $inspection = LocalThingsOcfOnboardingDiagnostic::inspect(new LocalThingsSession($transport), $host,
@@ -219,10 +245,13 @@ class LocalThingsDeviceClient
             $kind = $probe[$port]['kind'] ?? 'no_response';
             $result = array('port' => $port, 'owned' => $doxm['owned'] ?? null,
                 'operational' => $pstat['isop'] ?? null, 'oxm' => $doxm['oxmsel'] ?? null,
-                'psk_probe' => $kind, 'credential_installed' => $this->ownerPskCredential($host) !== null,
+                'psk_probe' => $kind, 'psk_carrier' => $carrier['carrier'] ?? 'unknown',
+                'psk_carrier_outcome' => $carrier['outcome'] ?? null,
+                'credential_installed' => $installed,
                 'association_available' => false,
                 'message' => 'Autorisation constructeur requise : le parcours d’association Samsung de ce modèle n’est pas disponible dans le plugin. Aucun propriétaire modifié.');
             $this->log('info', '[OwnerPSK] port=' . $port . ' ; sonde PSK=' . $kind
+                . ' ; carrier=' . ($carrier['carrier'] ?? 'unknown') . ' (' . ($carrier['outcome'] ?? '?') . ')'
                 . ' ; association automatique indisponible ; aucune écriture OCF');
             return $result;
         });
@@ -243,35 +272,54 @@ class LocalThingsDeviceClient
             }
         }
         return $this->withHostLockFor($host, function () use ($host, $credential, $preferredPort) {
-            $port = $this->certificateDiagnosticPort($host, $preferredPort, true);
-            $session = new LocalThingsSession(new LocalThingsOwnerPskTransport($host, $port, $credential));
-            try {
-                $session->connect(12.0);
-                list($code, $payload) = $session->get('/oic/sec/doxm', 8.0);
-                $doxm = $code === 69 ? LocalThingsCbor::decode($payload) : array();
-                if (!is_array($doxm) || ($doxm['owned'] ?? false) !== true
-                    || ($doxm['deviceuuid'] ?? '') !== $credential['device_uuid']
-                    || ($doxm['devowneruuid'] ?? '') !== $credential['owner_uuid']) {
-                    throw new RuntimeException(__('Propriétaire et appareil OwnerPSK non confirmés', __FILE__));
+            // Deux tentatives bornées : un port annoncé périmé (dport mobile après
+            // reboot/re-add) ou une association résiduelle ne doit pas survivre au
+            // retry. Chaque tentative re-découvre /oic/res et ouvre une association
+            // PSK fraîche (port source éphémère). Seuls les timeouts sont rejoués ;
+            // un refus d'identité/clé ou l'absence de service échoue immédiatement.
+            $attempts = 2;
+            $lastError = new RuntimeException(__('Session OwnerPSK fermée', __FILE__));
+            for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+                $port = null;
+                $session = null;
+                try {
+                    $port = $this->certificateDiagnosticPort($host, $preferredPort, true);
+                    $session = new LocalThingsSession(new LocalThingsOwnerPskTransport($host, $port, $credential));
+                    $session->connect(12.0);
+                    list($code, $payload) = $session->get('/oic/sec/doxm', 8.0);
+                    $doxm = $code === 69 ? LocalThingsCbor::decode($payload) : array();
+                    if (!is_array($doxm) || ($doxm['owned'] ?? false) !== true
+                        || ($doxm['deviceuuid'] ?? '') !== $credential['device_uuid']
+                        || ($doxm['devowneruuid'] ?? '') !== $credential['owner_uuid']) {
+                        throw new RuntimeException(__('Propriétaire et appareil OwnerPSK non confirmés', __FILE__));
+                    }
+                    list($code, $payload) = $session->get('/oic/sec/pstat', 8.0);
+                    $pstat = $code === 69 ? LocalThingsCbor::decode($payload) : array();
+                    if (!is_array($pstat) || ($pstat['isop'] ?? false) !== true) {
+                        throw new RuntimeException(__('Association OwnerPSK non finalisée : appareil non opérationnel', __FILE__));
+                    }
+                    $resources = $this->readOnlyResources($session, 60.0);
+                    $business = $this->mapper->map(array_filter($resources, function ($rep, $href) {
+                        return self::isBusinessResource($href, $rep);
+                    }, ARRAY_FILTER_USE_BOTH));
+                    if (!$business['entities']) { throw new RuntimeException(__('OwnerPSK : aucun état métier lisible, clé non enregistrée', __FILE__)); }
+                    (new LocalThingsOwnerPsk($this->certificateStore->dataDirectory()))->saveVerified($host, $credential);
+                    $this->log('info', '[OwnerPSK] Identités et lecture métier vérifiées ; clé enregistrée localement');
+                    return array('verified' => true, 'port' => $port, 'message' => 'Clé vérifiée et enregistrée. Vous pouvez utiliser Ajouter par IP.');
+                } catch (Throwable $error) {
+                    $lastError = $error;
+                    $this->log('warning', '[OwnerPSK] Échec hôte=' . $host . ' port=' . ($port ?? '?')
+                        . ' tentative=' . $attempt . '/' . $attempts . ' : ' . $error->getMessage());
+                    $kind = self::connectionFailureKind($error);
+                    if ($attempt >= $attempts || !in_array($kind, array('dtls_handshake_timeout', 'coap_timeout'), true)) {
+                        throw $error;
+                    }
+                    $this->log('info', '[OwnerPSK] Timeout ; re-découverte du port annoncé et nouvelle association à port source frais');
+                } finally {
+                    if ($session !== null) { $session->close(); }
                 }
-                list($code, $payload) = $session->get('/oic/sec/pstat', 8.0);
-                $pstat = $code === 69 ? LocalThingsCbor::decode($payload) : array();
-                if (!is_array($pstat) || ($pstat['isop'] ?? false) !== true) {
-                    throw new RuntimeException(__('Association OwnerPSK non finalisée : appareil non opérationnel', __FILE__));
-                }
-                $resources = $this->readOnlyResources($session, 60.0);
-                $business = $this->mapper->map(array_filter($resources, function ($rep, $href) {
-                    return self::isBusinessResource($href, $rep);
-                }, ARRAY_FILTER_USE_BOTH));
-                if (!$business['entities']) { throw new RuntimeException(__('OwnerPSK : aucun état métier lisible, clé non enregistrée', __FILE__)); }
-                (new LocalThingsOwnerPsk($this->certificateStore->dataDirectory()))->saveVerified($host, $credential);
-                $this->log('info', '[OwnerPSK] Identités et lecture métier vérifiées ; clé enregistrée localement');
-                return array('verified' => true, 'port' => $port, 'message' => 'Clé vérifiée et enregistrée. Vous pouvez utiliser Ajouter par IP.');
-            } catch (Throwable $error) {
-                $this->log('warning', '[OwnerPSK] Échec hôte=' . $host . ' port=' . $port
-                    . ' : ' . $error->getMessage());
-                throw $error;
-            } finally { $session->close(); }
+            }
+            throw $lastError;
         });
     }
 
@@ -922,6 +970,17 @@ class LocalThingsDeviceClient
     private static function connectionFailureKind(Throwable $error)
     {
         $message = strtolower($error->getMessage());
+        // Codes du transport OwnerPSK : sans eux, tout timeout PSK tombait en « other »
+        // et le diagnostic de reconnexion ne distinguait pas la cause réelle.
+        if (strpos($message, 'ownerpsk_connect_timeout') !== false) {
+            return 'dtls_handshake_timeout';
+        }
+        if (strpos($message, 'ownerpsk_rpc_timeout') !== false || strpos($message, 'ownerpsk_read_timeout') !== false) {
+            return 'coap_timeout';
+        }
+        if (strpos($message, 'ownerpsk_connect_failed') !== false) {
+            return 'dtls_refused';
+        }
         if (strpos($message, 'errno=111') !== false || strpos($message, 'connection refused') !== false) {
             return 'udp_refused';
         }
@@ -1647,7 +1706,9 @@ class LocalThingsDeviceClient
     }
 
     /**
-     * Sérialise les échanges utilisant le même port source local.
+     * Sérialise les échanges vers un même hôte : un appareil Samsung n'accepte
+     * qu'un client DTLS actif. Le verrou porte sur l'hôte et non sur le port source,
+     * car les sessions PSK utilisent désormais un port source éphémère.
      *
      * @param string $host Adresse IPv4 cible.
      * @param callable $callback Traitement à exécuter sous verrou.
@@ -1655,7 +1716,7 @@ class LocalThingsDeviceClient
      */
     private function withHostLock($host, callable $callback)
     {
-        $path = $this->lockDirectory . '/port-' . self::sourcePort($host) . '.lock';
+        $path = $this->lockDirectory . '/host-' . hash('sha256', $host) . '.lock';
         $handle = fopen($path, 'c');
         if (!is_resource($handle)) {
             throw new RuntimeException(__('Création du verrou LocalThings impossible', __FILE__));
@@ -1675,7 +1736,7 @@ class LocalThingsDeviceClient
                         throw new RuntimeException(__('Impossible de prendre le verrou LocalThings (échec de flock)', __FILE__));
                     }
                     if (!$waitLogged && microtime(true) - $started >= 10.0) {
-                        $this->log('info', '[Verrou] Port source ' . self::sourcePort($host)
+                        $this->log('info', '[Verrou] Hôte ' . $host
                             . ' occupé ; attente de la fin de l’échange précédent');
                         $waitLogged = true;
                     }
@@ -1684,11 +1745,11 @@ class LocalThingsDeviceClient
             } while (!$locked && microtime(true) < $deadline);
             if (!$locked) {
                 throw new RuntimeException(__('Un autre échange LocalThings est déjà en cours', __FILE__)
-                    . ' (port source ' . self::sourcePort($host) . ', attente de '
+                    . ' (hôte ' . $host . ', attente de '
                     . self::HOST_LOCK_WAIT_SECONDS . ' s)');
             }
             if ($waitLogged) {
-                $this->log('info', '[Verrou] Port source ' . self::sourcePort($host)
+                $this->log('info', '[Verrou] Hôte ' . $host
                     . ' libéré après ' . (int) round(microtime(true) - $started) . ' s');
             }
             return call_user_func($callback);

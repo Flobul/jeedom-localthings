@@ -114,11 +114,12 @@ captured = rpc.stdout + rpc.stderr
 if secret_identity in captured or secret_key in captured:
     raise AssertionError("OwnerPSK material escaped the private RPC")
 response = json.loads(rpc.stdout)
-if response != {
-    "ok": False,
-    "error": "Session OwnerPSK impossible ou interrompue",
-    "code": "ownerpsk_connect_failed",
-}:
+# The PSK socket is unconnected (it must accept replies from the appliance's real
+# responder port), so an unreachable port surfaces as a bounded timeout rather than
+# an ICMP refusal. Both are safe, non-leaking diagnostic codes.
+if response.get("ok") is not False \
+        or response.get("error") != "Session OwnerPSK impossible ou interrompue" \
+        or response.get("code") not in ("ownerpsk_connect_failed", "ownerpsk_connect_timeout"):
     raise AssertionError("OwnerPSK RPC did not return its safe diagnostic code")
 
 print("LocalThings OwnerPSK 16/32-byte validation: OK")
