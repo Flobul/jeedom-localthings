@@ -397,4 +397,295 @@ class LocalThingsOcfDiagnostic
         }
         return $fields;
     }
+
+    /**
+     * Découverte multicast OCF avec sélection par identité di (upstream #540).
+     * Deux piles OCF peuvent partager une IP ; l'unicast /oic/res peut être répondu
+     * par la mauvaise pile. Le multicast (224.0.1.187:5683) joint les deux piles ;
+     * chaque répondeur est démultiplexé par port source, son /oic/d est lu pour di,
+     * et seuls les ports du répondeur dont di correspond sont retenus. di n'est
+     * jamais journalisé. Retourne vide si aucun répondeur ne correspond (l'appelant
+     * retombe alors sur la découverte unicast existante).
+     * @return array<int,int>
+     */
+    public function discoverPortsForIdentity($expectedDi, callable $logger, $target = '224.0.1.187:5683', $timeout = 3.0)
+    {
+        $expectedDi = trim((string) $expectedDi);
+        if ($expectedDi === '' || strlen($expectedDi) > 255) {
+            return array();
+        }
+        $timeout = max(0.5, min(10.0, (float) $timeout));
+        try {
+            $responders = $this->multicastResponders($target, $timeout, $expectedDi);
+        } catch (LocalThingsDiscoveryCancelled $error) {
+            throw $error;
+        } catch (Throwable $error) {
+            $logger('info', '[OCF multicast] ' . $this->host . ' indisponible ; étape=' . $this->stage);
+            return array();
+        }
+        $ports = self::selectPortsForDi($responders, $expectedDi);
+        $logger('info', '[OCF multicast] ' . $this->host . ' : répondeurs=' . count($responders)
+            . ' ; di correspondant=' . ($ports ? 'oui' : 'non') . ' ; ports_dtls=' . count($ports));
+        return $ports;
+    }
+
+    /** Pur : retient les ports du ou des répondeurs dont di correspond exactement. */
+    public static function selectPortsForDi(array $responders, $expectedDi)
+    {
+        $expectedDi = trim((string) $expectedDi);
+        $ports = array();
+        foreach ($responders as $responder) {
+            if (!is_array($responder) || (string) ($responder['di'] ?? '') !== $expectedDi) {
+                continue;
+            }
+            foreach ((array) ($responder['ports'] ?? array()) as $port) {
+                $port = (int) $port;
+                if ($port > 0 && $port <= 65535) {
+                    $ports[$port] = $port;
+                }
+            }
+        }
+        return array_values($ports);
+    }
+
+    /** Extrait les ports coaps annoncés pour cet hôte (sans effet de bord provisioning). */
+    private static function extractCoapsPorts(array $decoded, $host)
+    {
+        $containers = array_keys($decoded) === range(0, count($decoded) - 1) ? $decoded : array($decoded);
+        $links = array();
+        foreach ($containers as $container) {
+            if (!is_array($container)) { continue; }
+            $candidates = isset($container['links']) && is_array($container['links'])
+                ? $container['links'] : (isset($container['href']) ? array($container) : array());
+            foreach ($candidates as $link) {
+                if (count($links) >= 256) { break; }
+                if (is_array($link)) { $links[] = $link; }
+            }
+        }
+        $ports = array();
+        foreach ($links as $link) {
+            foreach (array_slice(is_array($link['eps'] ?? null) ? $link['eps'] : array(), 0, 32) as $endpoint) {
+                $uri = is_array($endpoint) ? ($endpoint['ep'] ?? '') : '';
+                if (!is_string($uri) || strlen($uri) > 512) { continue; }
+                $parsed = parse_url($uri);
+                if (!$parsed || ($parsed['scheme'] ?? '') !== 'coaps' || isset($parsed['user'])
+                    || isset($parsed['query']) || isset($parsed['fragment'])
+                    || !in_array($parsed['path'] ?? '', array('', '/'), true)) { continue; }
+                $endpointHost = $parsed['host'] ?? '';
+                if (strpos($endpointHost, '[') === 0) { continue; }
+                if (filter_var($endpointHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
+                    || @inet_pton($endpointHost) !== @inet_pton($host)) { continue; }
+                $port = $parsed['port'] ?? 5684;
+                if (is_int($port) && $port > 0 && $port <= 65535) { $ports[] = $port; }
+            }
+            $legacy = $link['p'] ?? array();
+            if (is_array($legacy) && ($legacy['sec'] ?? false) === true) {
+                $port = $link['port'] ?? ($legacy['port'] ?? null);
+                if (is_int($port) && $port > 0 && $port <= 65535) { $ports[] = $port; }
+            }
+        }
+        return array_slice(array_values(array_unique($ports)), 0, 8);
+    }
+
+    /**
+     * Envoie un GET /oic/res multicast et collecte les répertoires de chaque pile
+     * répondante (démultiplexage par port source, Block2 par répondeur), puis lit
+     * /oic/d de chaque répondeur pour obtenir di. Aucun di n'est journalisé.
+     * @return array<int,array{di:string,ports:array<int,int>,port:int}>
+     */
+    private function multicastResponders($target, $timeout, $expectedDi = '')
+    {
+        $colon = strrpos($target, ':');
+        $address = $colon === false ? $target : substr($target, 0, $colon);
+        $targetPort = $colon === false ? 5683 : (int) substr($target, $colon + 1);
+        $socket = @stream_socket_server('udp://0.0.0.0:0', $errno, $error, STREAM_SERVER_BIND);
+        if (!is_resource($socket)) {
+            throw new RuntimeException(__('Service OCF multicast inaccessible', __FILE__));
+        }
+        stream_set_blocking($socket, false);
+        $token = random_bytes(4);
+        $deadline = microtime(true) + $timeout;
+        $peers = array();
+        $initial = $this->buildGet('oic/res', $token, 0, 6);
+        $nextSend = microtime(true) + 1.0;
+        try {
+            if (@stream_socket_sendto($socket, $initial, 0, $address . ':' . $targetPort) !== strlen($initial)) {
+                throw new RuntimeException(__('Envoi CoAP multicast impossible', __FILE__));
+            }
+            $this->stage = 'collecte multicast';
+            while (microtime(true) < $deadline) {
+                LocalThingsDiscovery::checkpoint();
+                // Retransmission bornée (motif du read() existant) : un datagramme
+                // perdu ne doit pas éliminer une pile ; réémet tant qu'aucune pile
+                // n'a terminé son répertoire.
+                if (microtime(true) >= $nextSend && (!$peers || !$this->allRespondersDone($peers))) {
+                    @stream_socket_sendto($socket, $initial, 0, $address . ':' . $targetPort);
+                    $nextSend = microtime(true) + 1.0;
+                }
+                $read = array($socket);
+                $write = $except = null;
+                if (@stream_select($read, $write, $except, 0, 100000) <= 0) {
+                    // Collecter jusqu'au délai : une pile co-localisée peut répondre
+                    // tardivement (upstream #540). Sortie anticipée uniquement quand
+                    // le di recherché est trouvé (ci-dessous).
+                    continue;
+                }
+                $peer = '';
+                $bytes = @stream_socket_recvfrom($socket, 16385, 0, $peer);
+                if (!is_string($bytes) || $bytes === '' || strlen($bytes) > 16384) { continue; }
+                $peerHost = substr($peer, 0, strrpos($peer, ':'));
+                if (strpos($peerHost, '[') !== false || $peerHost !== $this->host) { continue; }
+                $peerPort = (int) substr(strrchr($peer, ':'), 1);
+                try {
+                    $response = LocalThingsCoap::parse($bytes);
+                } catch (Throwable $error) {
+                    continue;
+                }
+                if (!in_array($response['code'] >> 5, array(2, 4, 5), true)) { continue; }
+                if (!hash_equals($token, $response['token']) || $response['type'] === LocalThingsCoap::TYPE_RST) { continue; }
+                if (!isset($peers[$peer])) {
+                    $peers[$peer] = array('blocks' => array(), 'next' => 0, 'done' => false,
+                        'links' => array(), 'port' => $peerPort);
+                }
+                if ($response['type'] === LocalThingsCoap::TYPE_ACK && $response['code'] === 0) { continue; }
+                if ($response['type'] === LocalThingsCoap::TYPE_CON) {
+                    @stream_socket_sendto($socket, LocalThingsCoap::build(LocalThingsCoap::TYPE_ACK, 0, $response['message_id'], ''), 0, $peer);
+                }
+                if (($response['code'] >> 5) !== 2) {
+                    $peers[$peer]['done'] = true;
+                    continue;
+                }
+                $blocks = LocalThingsCoap::optionValues($response, LocalThingsCoap::OPTION_BLOCK2);
+                $blockValue = $blocks ? LocalThingsCoap::uintOption($blocks[0]) : null;
+                $num = $blockValue === null ? 0 : ($blockValue >> 4);
+                $more = $blockValue !== null && ($blockValue & 8) !== 0;
+                if ($num !== $peers[$peer]['next'] || $num >= 64) { continue; }
+                $peers[$peer]['blocks'][$num] = $response['payload'];
+                $peers[$peer]['next'] = $num + 1;
+                if ($more) {
+                    $next = $this->buildGet('oic/res', $token, $num + 1, 6);
+                    @stream_socket_sendto($socket, $next, 0, $peer);
+                    continue;
+                }
+                ksort($peers[$peer]['blocks']);
+                $payload = implode('', $peers[$peer]['blocks']);
+                $peers[$peer]['done'] = true;
+                if (strlen($payload) > 65536) { continue; }
+                $formats = LocalThingsCoap::optionValues($response, LocalThingsCoap::OPTION_CONTENT_FORMAT);
+                $format = $formats ? LocalThingsCoap::uintOption($formats[0]) : 60;
+                $consumed = 0;
+                $decoded = null;
+                try {
+                    $decoded = $format === 50 ? json_decode($payload, true, 32) : LocalThingsCbor::decode($payload, $consumed);
+                } catch (Throwable $error) {
+                    $decoded = null;
+                }
+                if (is_array($decoded)) {
+                    $peers[$peer]['links'] = $decoded;
+                    // Lire di dès que le répertoire est complet ; sortie anticipée
+                    // si le di recherché est trouvé, sinon collecte jusqu'au délai.
+                    $peers[$peer]['di'] = $this->readDiUnicast($peerPort, min(2.0, $timeout));
+                    if ($expectedDi !== '' && $peers[$peer]['di'] === $expectedDi) { break; }
+                }
+            }
+            $this->stage = 'identité par répondeur';
+            $responders = array();
+            foreach ($peers as $state) {
+                if (!$state['links']) { continue; }
+                $ports = self::extractCoapsPorts($state['links'], $this->host);
+                $di = array_key_exists('di', $state) ? $state['di'] : $this->readDiUnicast($state['port'], min(2.0, $timeout));
+                $responders[] = array('di' => $di, 'ports' => $ports, 'port' => $state['port']);
+            }
+            return $responders;
+        } finally {
+            fclose($socket);
+        }
+    }
+
+    private function allRespondersDone(array $peers)
+    {
+        foreach ($peers as $state) {
+            if (!$state['done']) { return false; }
+        }
+        return true;
+    }
+
+    /** Construit un GET CON avec URI-Path et Block2 (szx encoded). */
+    private function buildGet($path, $token, $blockNum, $szx)
+    {
+        $options = array();
+        foreach (explode('/', trim($path, '/')) as $segment) {
+            $options[] = array(LocalThingsCoap::OPTION_URI_PATH, $segment);
+        }
+        $options[] = array(LocalThingsCoap::OPTION_BLOCK2, LocalThingsCoap::blockValue($blockNum, false, $szx));
+        return LocalThingsCoap::build(LocalThingsCoap::TYPE_CON, LocalThingsCoap::METHOD_GET, random_int(0, 65535), $token, $options);
+    }
+
+    /** Lit /oic/d en unicast vers un port répondeur et retourne di (usage interne, jamais journalisé). */
+    private function readDiUnicast($port, $timeout)
+    {
+        $socket = @stream_socket_server('udp://0.0.0.0:0', $errno, $error, STREAM_SERVER_BIND);
+        if (!is_resource($socket)) { return ''; }
+        stream_set_blocking($socket, false);
+        $target = $this->host . ':' . (int) $port;
+        $token = random_bytes(4);
+        $deadline = microtime(true) + max(0.2, min(3.0, $timeout));
+        $payload = '';
+        $next = 0;
+        try {
+            $request = $this->buildGet('oic/d', $token, 0, 6);
+            if (@stream_socket_sendto($socket, $request, 0, $target) !== strlen($request)) { return ''; }
+            $nextSend = microtime(true) + 1.0;
+            while (microtime(true) < $deadline) {
+                LocalThingsDiscovery::checkpoint();
+                if (microtime(true) >= $nextSend) {
+                    @stream_socket_sendto($socket, $request, 0, $target);
+                    $nextSend = microtime(true) + 1.0;
+                }
+                $read = array($socket);
+                $write = $except = null;
+                if (@stream_select($read, $write, $except, 0, 100000) <= 0) { continue; }
+                $peer = '';
+                $bytes = @stream_socket_recvfrom($socket, 16385, 0, $peer);
+                if (!is_string($bytes) || $bytes === '' || substr($peer, 0, strrpos($peer, ':')) !== $this->host) { continue; }
+                try {
+                    $response = LocalThingsCoap::parse($bytes);
+                } catch (Throwable $error) {
+                    continue;
+                }
+                if (!in_array($response['code'] >> 5, array(2, 4, 5), true)
+                    || !hash_equals($token, $response['token']) || $response['type'] === LocalThingsCoap::TYPE_RST) { continue; }
+                if ($response['type'] === LocalThingsCoap::TYPE_ACK && $response['code'] === 0) { continue; }
+                if ($response['type'] === LocalThingsCoap::TYPE_CON) {
+                    @stream_socket_sendto($socket, LocalThingsCoap::build(LocalThingsCoap::TYPE_ACK, 0, $response['message_id'], ''), 0, $peer);
+                }
+                if (($response['code'] >> 5) !== 2) { return ''; }
+                $blocks = LocalThingsCoap::optionValues($response, LocalThingsCoap::OPTION_BLOCK2);
+                $blockValue = $blocks ? LocalThingsCoap::uintOption($blocks[0]) : null;
+                $num = $blockValue === null ? 0 : ($blockValue >> 4);
+                $more = $blockValue !== null && ($blockValue & 8) !== 0;
+                if ($num !== $next || $num >= 16) { continue; }
+                $payload .= $response['payload'];
+                $next = $num + 1;
+                if (strlen($payload) > 16384) { return ''; }
+                if ($more) {
+                    $request = $this->buildGet('oic/d', $token, $num + 1, 6);
+                    @stream_socket_sendto($socket, $request, 0, $target);
+                    $nextSend = microtime(true) + 1.0;
+                    continue;
+                }
+                $consumed = 0;
+                $decoded = null;
+                try {
+                    $decoded = LocalThingsCbor::decode($payload, $consumed);
+                } catch (Throwable $error) {
+                    $decoded = json_decode($payload, true, 32);
+                }
+                return is_array($decoded) ? trim((string) ($decoded['di'] ?? '')) : '';
+            }
+            return '';
+        } finally {
+            fclose($socket);
+        }
+    }
 }

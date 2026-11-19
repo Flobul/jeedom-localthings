@@ -576,6 +576,10 @@ class localthings extends eqLogic
             $eqLogic->setIsVisible(1);
         }
         $eqLogic->setConfiguration('device_id', $deviceId);
+        $ocfDi = trim((string) ($device['ocf_di'] ?? ''));
+        if ($ocfDi !== '') {
+            $eqLogic->setConfiguration('ocf_di', $ocfDi);
+        }
         $eqLogic->setConfiguration('parent_device_id', (string) ($device['parent_device_id'] ?? ''));
         $eqLogic->setConfiguration('subdevice_uuid', $subdeviceUuid);
         $eqLogic->setConfiguration('serial', (string) ($device['serial'] ?? ''));
@@ -1637,6 +1641,7 @@ class localthings extends eqLogic
     {
         return array(
             'device_id' => (string) $this->getConfiguration('device_id', ''),
+            'ocf_di' => (string) $this->getConfiguration('ocf_di', ''),
             'parent_device_id' => (string) $this->getConfiguration('parent_device_id', ''),
             'subdevice_uuid' => (string) $this->getConfiguration('subdevice_uuid', ''),
             'serial' => (string) $this->getConfiguration('serial', ''),

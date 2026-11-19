@@ -20,7 +20,7 @@ class LocalThingsDeviceClient
 {
     public const AUTH_READ_ONLY = 'server_certificate_readonly';
 
-    public const PROBE_PORTS = array(49154, 49155, 5684, 49152, 49153, 49156, 49157, 49158, 49159, 49160);
+    public const PROBE_PORTS = array(49154, 49155, 49152, 49153, 49156, 49157, 49158, 49159, 49160, 5684);
 
     // Samsung appliances need a short quiet period after a write. Reading the
     // target resource too soon can make the firmware restore its former value.
@@ -288,11 +288,15 @@ class LocalThingsDeviceClient
                     $session->connect(12.0);
                     list($code, $payload) = $session->get('/oic/sec/doxm', 8.0);
                     $doxm = $code === 69 ? LocalThingsCbor::decode($payload) : array();
+                    // Liaison d'identité obligatoire : di de l'appareil + état owned.
+                    // devowneruuid n'est qu'un indice (upstream #435 décision 4) : un
+                    // credential pairwise-peer (Frame/RF23/soundbar) garde Samsung owner.
+                    // La clé est prouvée par le handshake PSK + les lectures métier.
                     if (!is_array($doxm) || ($doxm['owned'] ?? false) !== true
-                        || ($doxm['deviceuuid'] ?? '') !== $credential['device_uuid']
-                        || ($doxm['devowneruuid'] ?? '') !== $credential['owner_uuid']) {
-                        throw new RuntimeException(__('Propriétaire et appareil OwnerPSK non confirmés', __FILE__));
+                        || ($doxm['deviceuuid'] ?? '') !== $credential['device_uuid']) {
+                        throw new RuntimeException(__('Identité de l’appareil OwnerPSK non confirmée', __FILE__));
                     }
+                    $credential['profile'] = (($doxm['devowneruuid'] ?? '') === $credential['owner_uuid']) ? 'owner' : 'peer';
                     list($code, $payload) = $session->get('/oic/sec/pstat', 8.0);
                     $pstat = $code === 69 ? LocalThingsCbor::decode($payload) : array();
                     if (!is_array($pstat) || ($pstat['isop'] ?? false) !== true) {
@@ -400,11 +404,28 @@ class LocalThingsDeviceClient
     private function recoverRefreshEndpoint($host, $stalePort, $knownDevice, Throwable $initialError)
     {
         $logger = function ($level, $message) { $this->log($level, $message); };
-        try {
-            $advertised = (new LocalThingsOcfDiagnostic($host))->discoverPorts($logger);
-        } catch (Throwable $discoveryError) {
-            $this->log('info', '[Reconnect] Redécouverte publique impossible : ' . $discoveryError->getMessage());
-            throw $initialError;
+        $expectedDi = trim((string) ($knownDevice['ocf_di'] ?? ''));
+        $advertised = array();
+        // Deux piles OCF peuvent partager l'IP (upstream #540) : préférer la
+        // découverte multicast sélectionnée par di quand l'identité est connue.
+        if ($expectedDi !== '') {
+            try {
+                $advertised = (new LocalThingsOcfDiagnostic($host))->discoverPortsForIdentity($expectedDi, $logger);
+            } catch (LocalThingsDiscoveryCancelled $cancel) {
+                throw $cancel;
+            } catch (Throwable $multicastError) {
+                $advertised = array();
+            }
+        }
+        if (!$advertised) {
+            try {
+                $advertised = (new LocalThingsOcfDiagnostic($host))->discoverPorts($logger);
+            } catch (LocalThingsDiscoveryCancelled $cancel) {
+                throw $cancel;
+            } catch (Throwable $discoveryError) {
+                $this->log('info', '[Reconnect] Redécouverte publique impossible : ' . $discoveryError->getMessage());
+                throw $initialError;
+            }
         }
         $ports = self::recoveryPorts($advertised, $stalePort);
         if (!$ports) {
@@ -415,13 +436,39 @@ class LocalThingsDeviceClient
             $this->log('info', '[Reconnect] Port DTLS redécouvert pour ' . $host . ' : '
                 . (int) $stalePort . ' -> ' . $port);
             try {
-                return $this->readSnapshot($host, $port, 12.0, false, $knownDevice);
+                $snapshot = $this->readSnapshot($host, $port, 12.0, true, $knownDevice, null, 30.0, true);
+                $isSubdevice = trim((string) ($knownDevice['subdevice_uuid'] ?? '')) !== '';
+                if (!self::recoveryIdentityAccepted($snapshot['device'] ?? array(), $expectedDi, $isSubdevice)) {
+                    $this->log('info', '[Reconnect] Endpoint ' . $host . ':' . $port
+                        . ' : identité di non vérifiée ou différente de l’appareil connu ; ignoré (pile OCF co-localisée)');
+                    continue;
+                }
+                return $snapshot;
             } catch (Throwable $recoveryError) {
                 $this->log('info', '[Reconnect] Endpoint annoncé ' . $host . ':' . $port
                     . ' non exploitable : ' . self::connectionFailureKind($recoveryError));
             }
         }
         throw $initialError;
+    }
+
+    /**
+     * Garde d'identité de reconnexion (upstream #540/#447). Un port retrouvé n'est
+     * acceptable que si /oic/d a réellement été relu (di_verified) et correspond au
+     * di connu. La valeur de repli knownDevice.ocf_di ne prouve rien : sans lecture
+     * fraîche, on rejette. Les sous-équipements partagent l'identité du parent déjà
+     * vérifiée ; la garde ne s'applique pas à eux.
+     */
+    private static function recoveryIdentityAccepted(array $device, $expectedDi, $isSubdevice)
+    {
+        $expectedDi = trim((string) $expectedDi);
+        if ($expectedDi === '' || $isSubdevice) {
+            return true;
+        }
+        if (empty($device['di_verified'])) {
+            return false;
+        }
+        return trim((string) ($device['ocf_di'] ?? '')) === $expectedDi;
     }
 
     /**
@@ -1036,7 +1083,7 @@ class LocalThingsDeviceClient
      * @param LocalThingsSession|null $connectedSession Session déjà établie par l'appelant.
      * @return array<string,mixed>
      */
-    private function readSnapshot($host, $port, $handshakeTimeout, $includeIdentity = true, $knownDevice = array(), $connectedSession = null)
+    private function readSnapshot($host, $port, $handshakeTimeout, $includeIdentity = true, $knownDevice = array(), $connectedSession = null, $resourceBudget = null, $recoveryMode = false)
     {
         if ((int) $port < 1 || (int) $port > 65535) {
             throw new InvalidArgumentException(__('Port LocalThings invalide', __FILE__));
@@ -1095,7 +1142,7 @@ class LocalThingsDeviceClient
             if ($subdeviceUuid !== '') {
                 $resources = $this->readResources($session, array($subdeviceUuid, 'device', '0'));
             } elseif ($readOnly) {
-                $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0);
+                $resources = $this->readOnlyResources($session, $resourceBudget ?? ($includeIdentity ? 240.0 : 25.0));
             } else {
                 try {
                     $resources = $this->readResources($session);
@@ -1118,7 +1165,7 @@ class LocalThingsDeviceClient
                     $this->log('info', $fallbackPhase
                         . ' Lecture /device/0 échouée ; lecture authentifiée des ressources individuelles sur la même session');
                     $individualFallback = true;
-                    $resources = $this->readOnlyResources($session, $includeIdentity ? 240.0 : 25.0, true);
+                    $resources = $this->readOnlyResources($session, $resourceBudget ?? ($includeIdentity ? 240.0 : 25.0), true);
                 }
             }
             $this->log('info', '[Refresh] host=' . $host . ' port=' . (int) $port
@@ -1129,7 +1176,7 @@ class LocalThingsDeviceClient
             $identity = array();
             if ($includeIdentity && $subdeviceUuid === '') {
                 usleep(200000);
-                $identity = $this->readIdentity($session);
+                $identity = $this->readIdentity($session, $recoveryMode ? 4.0 : 10.0);
             }
             $information = $resources['/information/vs/0'] ?? array();
             $serial = self::normalizeIdentifier(
@@ -1219,6 +1266,8 @@ class LocalThingsDeviceClient
             $snapshot = array(
                 'device' => array(
                     'device_id' => $deviceId,
+                    'ocf_di' => (string) ($identity['raw']['/oic/d']['di'] ?? ($knownDevice['ocf_di'] ?? '')),
+                    'di_verified' => trim((string) ($identity['raw']['/oic/d']['di'] ?? '')) !== '',
                     'host' => $host,
                     'port' => (int) $port,
                     'auth_mode' => $readOnly ? self::AUTH_READ_ONLY : ($this->ownerPskCredential($host) !== null ? 'owner_psk' : 'certificate'),
@@ -1241,7 +1290,7 @@ class LocalThingsDeviceClient
                 'resources' => $resources,
             );
             $subdevices = array();
-            if ($includeIdentity && $subdeviceUuid === '') {
+            if ($includeIdentity && $subdeviceUuid === '' && !$recoveryMode) {
                 $ids = self::subdeviceIds($resources, $identity['raw']['/oic/res'] ?? array());
                 foreach ($ids as $uuid) {
                     try {
@@ -1512,13 +1561,13 @@ class LocalThingsDeviceClient
      * @param LocalThingsSession $session Session CoAP active.
      * @return array<string,mixed>
      */
-    private function readIdentity(LocalThingsSession $session)
+    private function readIdentity(LocalThingsSession $session, $identityTimeout = 10.0)
     {
-        $profile = $this->getOptional($session, array('oic', 'p'));
+        $profile = $this->getOptional($session, array('oic', 'p'), $identityTimeout);
         usleep(200000);
-        $device = $this->getOptional($session, array('oic', 'd'));
+        $device = $this->getOptional($session, array('oic', 'd'), $identityTimeout);
         usleep(200000);
-        $links = $this->getOptional($session, array('oic', 'res'));
+        $links = $this->getOptional($session, array('oic', 'res'), $identityTimeout);
         $types = $device['rt'] ?? array();
         if (is_string($types)) {
             $types = array($types);
@@ -1540,10 +1589,10 @@ class LocalThingsDeviceClient
      * @param string[] $path Chemin de la ressource.
      * @return array<string,mixed>
      */
-    private function getOptional(LocalThingsSession $session, $path)
+    private function getOptional(LocalThingsSession $session, $path, $timeout = 10.0)
     {
         try {
-            list($code, $payload) = $session->get($path, 10.0);
+            list($code, $payload) = $session->get($path, $timeout);
             if (($code >> 5) === 2 && $payload !== '') {
                 $decoded = LocalThingsCbor::decode($payload);
                 return is_array($decoded) ? $decoded : array();

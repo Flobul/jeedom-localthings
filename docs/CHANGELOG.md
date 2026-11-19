@@ -3,6 +3,9 @@
 
 ## Version 0.8.8 (19/11/2026)
 
+- Découverte plus fiable des appareils qui partagent une même adresse IP (Family Hub, climatiseurs à pile OCF co-localisée) : le plugin interroge aussi le multicast OCF et retient l’équipement dont l’identifiant authentifié correspond, au lieu de risquer de lire la mauvaise pile. L’identifiant `di` authentifié est conservé séparément de l’adresse et du port, et un endpoint retrouvé dont l’identité diffère est ignoré.
+- Les clés OwnerPSK de type « peer » (Frame TV, RF23, soundbars) sont acceptées à l’import même lorsque le propriétaire déclaré reste Samsung, dès lors que l’identité de l’appareil, son état opérationnel et les lectures métier sont vérifiés ; le profil (owner ou peer) est enregistré.
+- Un appareil hors ligne ou endormi n’est plus repoussé jusqu’à 30 minutes : la cadence de reconnexion est plafonnée à 2 minutes avant de reprendre la cadence configurée. Le port DTLS historique 5684 n’est essayé qu’en dernier recours.
 - Import OwnerPSK plus fiable sur les lave-linge et sèche-linge PSK : le transport ouvre une association fraîche (port source éphémère, socket non connectée qui épingle le port de réponse réel) et retente une fois après re-découverte du port annoncé en cas de timeout, au lieu d’échouer sur un port périmé ou une association résiduelle.
 - La découverte prouve le transport PSK avec une sonde à clé jetable avant de tenter un handshake certificat complet (qui pouvait bloquer les appareils PSK-only), puis propose l’import OwnerPSK ; le diagnostic de reconnexion classe correctement les timeouts OwnerPSK.
 

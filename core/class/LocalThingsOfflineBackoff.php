@@ -5,16 +5,13 @@
  */
 final class LocalThingsOfflineBackoff
 {
+    // Cadence bornée pour le LAN : un appareil endormi ou une IP changée ne doit
+    // pas devenir injoignable pendant 30 minutes (upstream #295). Au-delà de trois
+    // échecs, la cadence hors ligne configurée reprend.
     private const DELAYS_SECONDS = array(
         30,
         60,
         120,
-        300,
-        600,
-        900,
-        1200,
-        1500,
-        1800,
     );
 
     /**

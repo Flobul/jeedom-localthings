@@ -29,8 +29,14 @@ class LocalThingsOwnerPsk
             || !preg_match('/^(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{64})$/D', $credential['key'])) {
             throw new InvalidArgumentException(__('OwnerPSK attendue : 32 ou 64 caractères hexadécimaux (16 ou 32 octets)', __FILE__));
         }
-        return array('owner_uuid' => $credential['owner_uuid'], 'device_uuid' => $credential['device_uuid'],
+        $result = array('owner_uuid' => $credential['owner_uuid'], 'device_uuid' => $credential['device_uuid'],
             'key' => strtolower($credential['key']));
+        // Profil explicite (owner|peer) conservé s'il est valide ; absent par défaut
+        // pour ne pas modifier la forme des credentials déjà stockés (rétrocompatibilité).
+        if (isset($credential['profile']) && in_array($credential['profile'], array('owner', 'peer'), true)) {
+            $result['profile'] = $credential['profile'];
+        }
+        return $result;
     }
 
     /** Pure derivation: callers must supply an authorized manufacturer session. Never claims an appliance. */
