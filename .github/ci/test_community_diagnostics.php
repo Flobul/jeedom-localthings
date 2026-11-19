@@ -8,6 +8,9 @@ class eqLogic {
     public static $items = array();
     public static function byType($type) { return self::$items; }
 }
+class LocalThingsDeviceClient {
+    const AUTH_READ_ONLY = 'server_certificate_readonly';
+}
 class FakeEquipment {
     private $enabled;
     public function __construct($enabled) { $this->enabled = $enabled; }
@@ -17,9 +20,9 @@ class FakeEquipment {
     public function getConfiguration($key, $default = '') { return $default; }
     public function getCommunicationHealth() { return array('lastSuccess' => true, 'offline' => false, 'stoveOffline' => false); }
 }
-function extractCommunityMethod($source) {
-    $start = strpos($source, 'public static function getConfigForCommunity');
-    if ($start === false) throw new RuntimeException('Method missing');
+function extractClassMethod($source, $signature) {
+    $start = strpos($source, $signature);
+    if ($start === false) throw new RuntimeException('Method missing: ' . $signature);
     $brace = strpos($source, '{', $start);
     $depth = 0; $length = strlen($source);
     for ($i = $brace; $i < $length; $i++) {
@@ -30,11 +33,14 @@ function extractCommunityMethod($source) {
 }
 $root = dirname(__DIR__, 2);
 $source = file_get_contents($root . '/core/class/localthings.class.php');
-$method = extractCommunityMethod($source);
-foreach (array('config::all(', 'json_encode(', 'getName()', 'network::', 'curl_', 'file_get_contents(', 'sendRequest(', 'requestGet(', 'log::') as $forbidden) {
-    if (strpos($method, $forbidden) !== false) throw new RuntimeException('Forbidden diagnostic source: ' . $forbidden);
+$method = extractClassMethod($source, 'public static function getConfigForCommunity');
+$connectionTypeMethod = extractClassMethod($source, 'public static function connectionType');
+foreach (array($method, $connectionTypeMethod) as $evaluatedMethod) {
+    foreach (array('config::all(', 'json_encode(', 'getName()', 'network::', 'curl_', 'file_get_contents(', 'sendRequest(', 'requestGet(', 'getCommunicationHealth(', 'log::') as $forbidden) {
+        if (strpos($evaluatedMethod, $forbidden) !== false) throw new RuntimeException('Forbidden diagnostic source: ' . $forbidden);
+    }
 }
-eval('class CommunityDiagnosticHarness extends eqLogic {' . $method . '}');
+eval('class CommunityDiagnosticHarness extends eqLogic {' . $method . $connectionTypeMethod . '}');
 config::$values = array(
     'password' => 'TOP_SECRET_PASSWORD', 'token' => 'TOP_SECRET_TOKEN', 'access_token' => 'TOP_SECRET_TOKEN',
     'ip' => '192.168.1.10', 'mqtt_host' => 'private.broker.local', 'recordDir' => '/Users/private/media',
