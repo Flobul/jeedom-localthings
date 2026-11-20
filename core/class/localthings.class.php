@@ -29,7 +29,7 @@ require_once __DIR__ . '/LocalThingsLegacySecret.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.9.0';
+    public static $_pluginVersion = '0.9.1';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -944,6 +944,39 @@ class localthings extends eqLogic
             $ordered[] = $entry;
         }
         return implode(';', $ordered);
+    }
+
+    /**
+     * Autorise les valeurs générées et les valeurs ajoutées à la liste Jeedom.
+     *
+     * La recette reste la source de vérité du transport ; seules les valeurs
+     * réellement présentes dans la liste de la commande sont ajoutées. Les
+     * entrées personnalisées ainsi conservées redeviennent exécutables.
+     *
+     * @param array<string,mixed> $recipe Recette de la commande.
+     * @param string $listValue Liste Jeedom au format valeur|libellé.
+     * @return string[]
+     */
+    public static function commandAllowedValues($recipe, $listValue)
+    {
+        $allowed = array();
+        if (isset($recipe['allowed']) && is_array($recipe['allowed'])) {
+            foreach ($recipe['allowed'] as $value) {
+                if (is_scalar($value)) {
+                    $allowed[] = (string) $value;
+                }
+            }
+        }
+        foreach (array_filter(explode(';', (string) $listValue), 'strlen') as $entry) {
+            $parts = explode('|', $entry, 2);
+            if (count($parts) !== 2 || $parts[0] === '' || strpos($parts[1], '|') !== false) {
+                continue;
+            }
+            if (!in_array($parts[0], $allowed, true)) {
+                $allowed[] = $parts[0];
+            }
+        }
+        return $allowed;
     }
 
     /**
@@ -2616,6 +2649,12 @@ class localthingsCmd extends cmd
         $recipe = is_array($extra) ? ($extra['recipe'] ?? null) : null;
         if (!is_array($recipe)) {
             throw new RuntimeException(__('Recette de commande LocalThings absente', __FILE__));
+        }
+        if ($this->getSubType() === 'select') {
+            $recipe['allowed'] = localthings::commandAllowedValues(
+                $recipe,
+                (string) $this->getConfiguration('listValue', '')
+            );
         }
         try {
             $machineState = self::currentMachineState($eqLogic);

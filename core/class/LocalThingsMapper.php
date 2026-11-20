@@ -459,6 +459,18 @@ class LocalThingsMapper
                 throw new InvalidArgumentException(__('Valeur absente de la liste autorisée', __FILE__));
             }
         }
+        if (
+            $href === '/mode/convenient/vs/0'
+            && (string) $value === 'Nano'
+            && isset($resources['/modeoption/windfree/vs/0'])
+            && is_array($resources['/modeoption/windfree/vs/0'])
+            && array_key_exists('x.com.samsung.da.windfree', $resources['/modeoption/windfree/vs/0'])
+        ) {
+            $href = '/modeoption/windfree/vs/0';
+            $field = 'x.com.samsung.da.windfree';
+            $encoding = 'on_off';
+            $value = true;
+        }
 
         switch ($encoding) {
             case 'bool':
@@ -1397,7 +1409,14 @@ class LocalThingsMapper
         foreach (array_unique($candidates) as $candidate) {
             $options = $representation[$candidate] ?? null;
             if (is_array($options)) {
-                return array_values(array_filter($options, 'is_scalar'));
+                $options = array_values(array_filter($options, 'is_scalar'));
+                $currentValues = is_array($value) ? $value : array($value);
+                foreach ($currentValues as $currentValue) {
+                    if (is_scalar($currentValue) && !in_array($currentValue, $options, true)) {
+                        $options[] = $currentValue;
+                    }
+                }
+                return $options;
             }
         }
         return array();

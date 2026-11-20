@@ -65,6 +65,21 @@ try {
         'Removed generated values must be pruned while custom values remain'
     );
 
+    $allowedValues = new ReflectionMethod('localthings', 'commandAllowedValues');
+    $recipe = array('encoding' => 'option_token', 'allowed' => array('Off', 'Quiet'));
+    assertAcCommand(
+        $allowedValues->invoke(null, $recipe, 'Off|Désactivé;Quiet|Silencieux;Custom|Mon mode') === array('Off', 'Quiet', 'Custom'),
+        'Custom values kept in the action list must remain executable'
+    );
+    assertAcCommand(
+        $allowedValues->invoke(null, $recipe, '') === array('Off', 'Quiet'),
+        'The generated allow-list must still apply without custom values'
+    );
+    assertAcCommand(
+        $allowedValues->invoke(null, array('encoding' => 'option_token', 'allowed' => array('180', '300')), 'x|y|z') === array('180', '300'),
+        'Malformed custom list entries must be ignored'
+    );
+
     $preserveValue = new ReflectionMethod('localthings', 'preserveGeneratedValue');
     assertAcCommand(
         $preserveValue->invoke(null, 'Mon libellé', 'Nouveau libellé', 'Ancien libellé') === 'Mon libellé',
@@ -143,8 +158,8 @@ try {
 
     $resources = array(
         '/mode/convenient/vs/0' => array(
-            'x.com.samsung.da.modes' => 'Off',
-            'x.com.samsung.da.supportedModes' => array('Off', 'Quiet', 'Nano', 'NanoSleep'),
+            'x.com.samsung.da.modes' => 'Quiet',
+            'x.com.samsung.da.supportedModes' => array('Off', 'Nano', 'NanoSleep'),
         ),
         '/mode/vs/0' => array(
             'x.com.samsung.da.modes' => array('Cool'),
@@ -163,6 +178,70 @@ try {
     $entities = array();
     foreach ($mapped['entities'] as $entity) { $entities[$entity['name']] = $entity; }
 
+    $selectCommand = $entities['Mode de confort']['actions'][0] ?? array();
+    $remoteWrites = 0;
+    $lastRecipe = null;
+    $deviceClient = new class($remoteWrites, $lastRecipe) extends LocalThingsDeviceClient {
+        public $writes;
+        public $recipe;
+        public function __construct(&$writes, &$recipe) {
+            $this->writes =& $writes;
+            $this->recipe =& $recipe;
+        }
+        public function execute($host, $port, $recipe, $value, $bypassRemoteControl = false) {
+            $this->writes++;
+            $this->recipe = $recipe;
+            return array('resources' => array(), 'matched' => false);
+        }
+    };
+    $connected = new class { public function execCmd() { return 1; } };
+    $selectEquipment = new class($connected) {
+        private $connected;
+        private $client;
+        public function __construct($connected) { $this->connected = $connected; }
+        public function setClient($client) { $this->client = $client; }
+        public function deviceClient() { return $this->client; }
+        public function getConfiguration($key, $default = null) {
+            if ($key === 'auth_mode') { return 'certificate'; }
+            if ($key === 'device_type') { return 'airconditioner'; }
+            return $default;
+        }
+        public function getCmd($type, $logicalId = null) {
+            return $type === 'info' && $logicalId === 'connected' ? $this->connected : null;
+        }
+        public function recordCommunicationFailure($message) {}
+        public function applyCommandResult($result) {}
+    };
+    $selectAction = new class($selectEquipment, $selectCommand, $connected) extends localthingsCmd {
+        private $testEquipment;
+        private $testRecipe;
+        private $testListValue;
+        public function __construct($equipment, $action, $connected) {
+            $this->testEquipment = $equipment;
+            $this->testRecipe = $action['extra']['recipe'] ?? array();
+            $this->configureTestCommand('select', 0, $connected);
+            $this->testListValue = 'CustomAir|Mode personnalisé';
+        }
+        public function getEqLogic() { return $this->testEquipment; }
+        public function getConfiguration($key, $default = null) {
+            if ($key === 'operation') { return 'write'; }
+            if ($key === 'extra') { return json_encode(array('recipe' => $this->testRecipe)); }
+            if ($key === 'listValue') { return $this->testListValue; }
+            return $default;
+        }
+        public function getType() { return 'action'; }
+        public function getSubType() { return 'select'; }
+    };
+    $clientProperty = new ReflectionProperty('localthings', 'daemonDeviceClient');
+    $clientProperty->setValue(null, $deviceClient);
+    $selectAction->executeDirect(array('select' => 'CustomAir'));
+    assertAcCommand($remoteWrites === 1, 'A custom list value must be sent to the device');
+    assertAcCommand(
+        in_array('CustomAir', $lastRecipe['allowed'] ?? array(), true),
+        'Custom list values must be merged into the write allow-list'
+    );
+    $clientProperty->setValue(null, null);
+
     assertAcCommand(isset($entities['Mode de confort']), 'Convenient AC modes need a dedicated name');
     $labels = array();
     foreach ($entities['Mode de confort']['actions'][0]['options'] ?? array() as $option) {
@@ -171,6 +250,20 @@ try {
     assertAcCommand(($labels['Quiet'] ?? '') === 'Silencieux', 'Quiet needs a French label');
     assertAcCommand(($labels['Nano'] ?? '') === 'WindFree', 'Nano must be exposed as WindFree');
     assertAcCommand(($labels['NanoSleep'] ?? '') === 'WindFree Sleep', 'NanoSleep must be exposed as WindFree Sleep');
+
+    $comfortRecipe = $entities['Mode de confort']['actions'][0]['extra']['recipe'] ?? array();
+    $nanoWrite = (new LocalThingsMapper())->buildWrite($comfortRecipe, 'Nano', $resources);
+    assertAcCommand(
+        $nanoWrite['path'] === array('modeoption', 'windfree', 'vs', '0')
+        && $nanoWrite['body'] === array('x.com.samsung.da.windfree' => 'On'),
+        'Nano must use the dedicated WindFree resource when the device exposes it'
+    );
+    $nanoSleepWrite = (new LocalThingsMapper())->buildWrite($comfortRecipe, 'NanoSleep', $resources);
+    assertAcCommand(
+        $nanoSleepWrite['path'] === array('mode', 'convenient', 'vs', '0')
+        && $nanoSleepWrite['body'] === array('x.com.samsung.da.modes' => 'NanoSleep'),
+        'NanoSleep must keep the confirmed convenient-mode write path'
+    );
 
     foreach (array(
         'Mode nuit tropicale',

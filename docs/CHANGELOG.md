@@ -1,6 +1,10 @@
 # Changelog
 ## Non publié
 
+## Version 0.9.1 (20/11/2026)
+
+- Les modes de confort personnalisés restent exécutables après les resynchronisations. Le mode courant `Quiet` est ajouté nativement à la liste même si l’appareil omet de l’annoncer, et `Nano` utilise la ressource WindFree dédiée lorsqu’elle est disponible afin d’éviter le refus CoAP.
+
 ## Version 0.9.0 (19/11/2026)
 
 - Un appareil dont l’adresse IP change (bail DHCP) n’est plus marqué mort : le plugin le retrouve sur le réseau grâce à son identifiant authentifié `di` et met à jour son adresse automatiquement, sans toucher aux commandes ni aux personnalisations.
