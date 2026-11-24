@@ -84,7 +84,12 @@ function localthings_update()
     config::remove('daemon_port', 'localthings');
     localthings_remove_legacy_poll_cron();
     if (class_exists('localthings')) {
-        try { localthings::deamon_stop(); } catch (Throwable $error) {}
+        $stopped = false;
+        try { $stopped = localthings::deamon_stop(); } catch (Throwable $error) {}
+        if (!$stopped) {
+            log::add('localthings', 'warning', '[Update] Ancien démon encore actif ; redémarrage différé pour éviter de mélanger deux versions du code');
+            return;
+        }
         if ((int) config::byKey('deamonAutoMode', 'localthings', 1) === 1) {
             try {
                 localthings::deamon_start();

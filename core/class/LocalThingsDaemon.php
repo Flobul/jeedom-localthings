@@ -9,17 +9,19 @@ class LocalThingsDaemon
     private $tick;
     private $shutdown;
     private $logger;
+    private $version;
     private $running = true;
     private $lockHandle;
     private $server;
 
-    public function __construct($runtimePath, callable $handler, $tick = null, $shutdown = null, $logger = null)
+    public function __construct($runtimePath, callable $handler, $tick = null, $shutdown = null, $logger = null, $version = '')
     {
         $this->runtimePath = rtrim((string) $runtimePath, '/');
         $this->handler = $handler;
         $this->tick = is_callable($tick) ? $tick : null;
         $this->shutdown = is_callable($shutdown) ? $shutdown : null;
         $this->logger = is_callable($logger) ? $logger : null;
+        $this->version = (string) $version;
     }
 
     public function run()
@@ -152,7 +154,7 @@ class LocalThingsDaemon
                 LocalThingsOperationDeadline::setEpochMilliseconds($expiresAtMs);
             }
             if ($operation === 'health') {
-                $result = array('pid' => getmypid(), 'heartbeat' => time());
+                $result = array('pid' => getmypid(), 'heartbeat' => time(), 'version' => $this->version);
             } elseif ($operation === 'stop') {
                 $result = array('stopping' => true, 'pid' => getmypid());
                 $this->running = false;
@@ -197,7 +199,7 @@ class LocalThingsDaemon
         if (!is_string($temporary)) {
             return;
         }
-        $data = json_encode(array('pid' => getmypid(), 'updated' => time()));
+        $data = json_encode(array('pid' => getmypid(), 'updated' => time(), 'version' => $this->version));
         if (@file_put_contents($temporary, $data, LOCK_EX) !== false) {
             @chmod($temporary, 0600);
             @rename($temporary, $this->runtimePath . '/heartbeat.json');

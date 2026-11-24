@@ -1,6 +1,15 @@
 # Changelog
 ## Non publié
 
+## Version 0.9.2 (24/11/2026)
+
+- Une mise à jour ne peut plus laisser tourner en mémoire une ancienne version du démon : sa version est publiée dans le heartbeat, un démon obsolète est arrêté avant redémarrage et l’arrêt est forcé via le mécanisme du core Jeedom s’il reste bloqué dans un échange DTLS. Cela garantit que les correctifs `Nano`, `Quiet` et listes autorisées deviennent réellement actifs après la mise à jour.
+- L’import OwnerPSK depuis une sauvegarde iPhone retente désormais une négociation DTLS interrompue avec une association et un port source neufs, sans nécessiter de sélectionner d’abord une autre entrée OCF ; les refus explicites d’identité ou de clé restent définitifs et ne sont pas rejoués.
+- Les passerelles EHS comme le MIM-H04EN qui renvoient une liste de liens au lieu des représentations dans `/<UUID>/device/0` sont relues ressource par ressource sur la même session. Les commandes atteignent ainsi réellement la PAC au lieu d’échouer avant l’écriture.
+- Les équipements EHS sont reconnus à partir de plusieurs ressources métier concordantes. Les zones 1 et 2, l’ECS et les modes chauffage/climatisation utilisent des libellés explicites ; les métadonnées techniques de température ne créent plus de commandes et les consignes désactivées ou dotées de bornes sentinelles ne produisent plus de curseur inutilisable.
+- Un premier timeout OwnerPSK transitoire (`ownerpsk_connect_timeout`, lecture ou RPC) ne fait plus immédiatement passer un équipement jusque-là joignable hors ligne ; une seconde tentative consécutive confirme la coupure et conserve le backoff existant.
+- Les libellés des commandes du widget peuvent désormais tenir sur deux lignes au lieu d’être systématiquement tronqués par des points de suspension.
+
 ## Version 0.9.1 (20/11/2026)
 
 - Les modes de confort personnalisés restent exécutables après les resynchronisations. Le mode courant `Quiet` est ajouté nativement à la liste même si l’appareil omet de l’annoncer, et `Nano` utilise la ressource WindFree dédiée lorsqu’elle est disponible afin d’éviter le refus CoAP.

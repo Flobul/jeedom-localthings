@@ -119,7 +119,16 @@ response = json.loads(rpc.stdout)
 # an ICMP refusal. Both are safe, non-leaking diagnostic codes.
 if response.get("ok") is not False \
         or response.get("error") != "Session OwnerPSK impossible ou interrompue" \
-        or response.get("code") not in ("ownerpsk_connect_failed", "ownerpsk_connect_timeout"):
+        or response.get("code") not in ("ownerpsk_connect_transient", "ownerpsk_connect_timeout"):
     raise AssertionError("OwnerPSK RPC did not return its safe diagnostic code")
+
+if module.failure_code(TimeoutError(), "connect") != "ownerpsk_connect_timeout":
+    raise AssertionError("OwnerPSK timeout classification changed")
+if module.failure_code(module.DtlsError("peer sent fatal alert 115"), "connect") \
+        != "ownerpsk_connect_auth_failed":
+    raise AssertionError("OwnerPSK authentication failure must remain terminal")
+if module.failure_code(module.DtlsError("session state interrupted"), "connect") \
+        != "ownerpsk_connect_transient":
+    raise AssertionError("OwnerPSK cold-handshake failure must be retryable")
 
 print("LocalThings OwnerPSK 16/32-byte validation: OK")

@@ -65,6 +65,7 @@ final class OfflineBackoffEquipment
     );
 
     private $connected;
+    private $failRefresh = true;
 
     public function __construct()
     {
@@ -91,7 +92,14 @@ final class OfflineBackoffEquipment
 
     public function refreshDirect()
     {
-        throw new RuntimeException('synthetic communication failure');
+        if ($this->failRefresh) {
+            throw new RuntimeException('Session OwnerPSK impossible ou interrompue [ownerpsk_connect_timeout]');
+        }
+    }
+
+    public function setFailRefresh($fail)
+    {
+        $this->failRefresh = (bool) $fail;
     }
 
     public function checkAndUpdateCmd($logicalId, $value)
@@ -108,6 +116,11 @@ final class OfflineBackoffEquipment
     public function getHumanName()
     {
         return '[Test][Offline device]';
+    }
+
+    public function connectedValue()
+    {
+        return $this->connected->execCmd();
     }
 }
 
@@ -143,8 +156,31 @@ try {
     if ((int) $equipment->configuration['last_refresh'] <= 0) {
         throw new RuntimeException('The failed attempt must update last_refresh');
     }
+    if ($equipment->connectedValue() !== 1) {
+        throw new RuntimeException('First transient OwnerPSK timeout must not immediately mark an online device offline');
+    }
 
-    echo "LocalThings offline retry first-failure transition: OK\n";
+    $equipment->setFailRefresh(false);
+    $equipment->configuration['last_refresh'] = 0;
+    localthings::pollDirect();
+    if ((int) $equipment->configuration['offline_retry_failures'] !== 0) {
+        throw new RuntimeException('A successful retry must reset the transient OwnerPSK failure count');
+    }
+
+    $equipment->setFailRefresh(true);
+    $equipment->configuration['last_refresh'] = 0;
+    localthings::pollDirect();
+    if ($equipment->connectedValue() !== 1) {
+        throw new RuntimeException('A new first transient timeout after recovery must keep the device online');
+    }
+
+    $equipment->configuration['last_refresh'] = 0;
+    localthings::pollDirect();
+    if ($equipment->connectedValue() !== 0) {
+        throw new RuntimeException('Second consecutive transient OwnerPSK timeout must mark the device offline; failures=' . json_encode($equipment->configuration));
+    }
+
+    echo "LocalThings offline retry transient OwnerPSK transition: OK\n";
 } finally {
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($sandbox, FilesystemIterator::SKIP_DOTS),

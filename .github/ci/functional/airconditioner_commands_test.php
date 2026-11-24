@@ -158,7 +158,10 @@ try {
 
     $resources = array(
         '/mode/convenient/vs/0' => array(
-            'x.com.samsung.da.modes' => 'Quiet',
+            'x.com.samsung.da.modes' => 'Off',
+            // Real devices can accept the dynamic Quiet preset while omitting it
+            // from supportedModes (#327). It must remain selectable even when it
+            // is not the current value.
             'x.com.samsung.da.supportedModes' => array('Off', 'Nano', 'NanoSleep'),
         ),
         '/mode/vs/0' => array(

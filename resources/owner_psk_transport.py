@@ -274,6 +274,19 @@ def check_transport():
     DtlsPskClient(identity=identity, key=bytes(16), mtu=MTU)
 
 
+def failure_code(error, action):
+    """Return a redacted, actionable RPC code without exposing exception text."""
+    safe_action = action if action in ('connect', 'write', 'read', 'close', 'psk_probe') else 'request'
+    if isinstance(error, TimeoutError):
+        return 'ownerpsk_' + safe_action + '_timeout'
+    if safe_action == 'connect' and isinstance(error, DtlsError):
+        alert = re.search(r'peer sent fatal alert\s+(\d+)', str(error))
+        if alert and int(alert.group(1)) in (20, 51, 115):
+            return 'ownerpsk_connect_auth_failed'
+        return 'ownerpsk_connect_transient'
+    return 'ownerpsk_' + safe_action + '_failed'
+
+
 def main():
     transport = None
     action = ''
@@ -320,12 +333,10 @@ def main():
             print(json.dumps({'ok': True, 'result': result}), flush=True)
     except Exception as error:
         # Protocol, JSON and credential errors must never expose their values.
-        safe_action = action if action in ('connect', 'write', 'read', 'close', 'psk_probe') else 'request'
-        suffix = '_timeout' if isinstance(error, TimeoutError) else '_failed'
         print(json.dumps({
             'ok': False,
             'error': 'Session OwnerPSK impossible ou interrompue',
-            'code': 'ownerpsk_' + safe_action + suffix,
+            'code': failure_code(error, action),
         }), flush=True)
     finally:
         if transport:

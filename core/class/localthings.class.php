@@ -29,7 +29,7 @@ require_once __DIR__ . '/LocalThingsLegacySecret.php';
  */
 class localthings extends eqLogic
 {
-    public static $_pluginVersion = '0.9.1';
+    public static $_pluginVersion = '0.9.2';
     public static $_widgetPossibility = array('custom' => true, 'custom::layout' => true);
     private static $daemonDeviceClient = null;
     private static $discoveryLease = null;
@@ -1523,6 +1523,27 @@ class localthings extends eqLogic
         self::pollDirect();
     }
 
+    /**
+     * Évite qu'un unique timeout OwnerPSK transitoire fasse immédiatement passer
+     * un équipement jusque-là en ligne à « hors ligne ». Le backoff est armé et
+     * le prochain échec consécutif confirme la coupure réelle.
+     *
+     * @param bool $wasOnline
+     * @param int $failureCount Nombre d'échecs consécutifs AVANT cette tentative.
+     * @param string $message
+     * @return bool
+     */
+    public static function preserveOnlineOnTransientFailure($wasOnline, $failureCount, $message)
+    {
+        if (!$wasOnline || (int) $failureCount > 0) {
+            return false;
+        }
+        $message = strtolower((string) $message);
+        return strpos($message, 'ownerpsk_connect_timeout') !== false
+            || strpos($message, 'ownerpsk_rpc_timeout') !== false
+            || strpos($message, 'ownerpsk_read_timeout') !== false;
+    }
+
     public static function pollDirect()
     {
         self::reloadLogConfiguration();
@@ -1530,9 +1551,8 @@ class localthings extends eqLogic
         foreach (self::byType(__CLASS__, true) as $eqLogic) {
             $online = self::equipmentIsOnline($eqLogic);
             $interval = self::pollIntervalSecondsForState($online);
-            $failureCount = 0;
+            $failureCount = (int) $eqLogic->getConfiguration('offline_retry_failures', 0);
             if (!$online) {
-                $failureCount = (int) $eqLogic->getConfiguration('offline_retry_failures', 0);
                 $interval = LocalThingsOfflineBackoff::delaySeconds(
                     $failureCount,
                     $interval
@@ -1544,12 +1564,19 @@ class localthings extends eqLogic
             }
             try {
                 $eqLogic->refreshDirect();
-                if (!$online) {
+                if ($failureCount > 0) {
                     $eqLogic->setConfiguration('offline_retry_failures', 0);
                     $eqLogic->save(true);
                 }
             } catch (Throwable $exception) {
-                $eqLogic->checkAndUpdateCmd('connected', 0);
+                $preserveOnline = self::preserveOnlineOnTransientFailure(
+                    $online,
+                    $failureCount,
+                    $exception->getMessage()
+                );
+                if (!$preserveOnline) {
+                    $eqLogic->checkAndUpdateCmd('connected', 0);
+                }
                 $eqLogic->setConfiguration('last_error', $exception->getMessage());
                 $eqLogic->setConfiguration('last_refresh', time());
                 $eqLogic->setConfiguration(
@@ -1604,7 +1631,7 @@ class localthings extends eqLogic
             // derrière l'opération et Jeedom lancerait à tort un second démon.
             // Le triplet verrou détenu + socket + heartbeat identifie ce cas
             // comme « occupé mais vivant » sans créer de requête en attente.
-            $state = self::daemonIpc(2.0)->runtimeStatus(180) ? 'ok' : 'nok';
+            $state = self::daemonIpc(2.0)->runtimeStatus(180, self::$_pluginVersion) ? 'ok' : 'nok';
         } catch (Throwable $exception) {
             $state = 'nok';
         }
@@ -1622,6 +1649,17 @@ class localthings extends eqLogic
     {
         if ((self::deamon_info()['state'] ?? 'nok') === 'ok') {
             return true;
+        }
+        // Un démon vivant avec une version de code différente doit être arrêté
+        // avant le lancement, sinon son verrou empêche silencieusement la nouvelle version.
+        try {
+            if (self::daemonIpc(2.0)->runtimeStatus(180)) {
+                if (!self::deamon_stop()) {
+                    throw new RuntimeException(__('L’ancien démon LocalThings ne peut pas être arrêté', __FILE__));
+                }
+            }
+        } catch (LocalThingsDaemonUnavailableException $error) {
+            // Aucun démon vivant : lancement normal.
         }
         $script = self::pluginRoot() . '/resources/daemon.php';
         if (!is_file($script)) {
@@ -1650,14 +1688,31 @@ class localthings extends eqLogic
         try {
             self::daemonIpc(3.0)->stop();
         } catch (Throwable $exception) {
-            // Un démon déjà arrêté ne constitue pas une erreur.
+            // Le démon peut être occupé dans un échange DTLS synchrone.
         }
         $deadline = microtime(true) + 4.0;
         while (microtime(true) < $deadline) {
-            if ((self::deamon_info()['state'] ?? 'nok') !== 'ok') {
+            // Ici on teste la vie du processus quelle que soit sa version : un
+            // heartbeat ancien ne signifie pas encore que le processus a quitté.
+            if (!self::daemonIpc(2.0)->runtimeStatus(180)) {
                 return true;
             }
             usleep(100000);
+        }
+
+        // Une mise à jour ne doit jamais conserver en mémoire les anciennes classes
+        // PHP. Réutilise system::kill du core Jeedom, comme les autres démons core,
+        // si l'arrêt IPC n'a pas pu être servi parce que le démon était occupé.
+        $pid = (int) @file_get_contents(self::daemonRuntimePath() . '/daemon.pid');
+        if ($pid > 1 && class_exists('system')) {
+            system::kill($pid, false);
+            $deadline = microtime(true) + 8.0;
+            while (microtime(true) < $deadline) {
+                if (!self::daemonIpc(2.0)->runtimeStatus(180)) {
+                    return true;
+                }
+                usleep(100000);
+            }
         }
         return false;
     }

@@ -814,7 +814,8 @@
         "Commandes configurées": "Configured commands",
         "Équipements actifs": "Active equipment",
         "Tâche de rafraîchissement introuvable": "Refresh task not found",
-        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Refresh task not found; please reinstall the plugin"
+        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Refresh task not found; please reinstall the plugin",
+        "L’ancien démon LocalThings ne peut pas être arrêté": "The previous LocalThings daemon cannot be stopped"
     },
     "plugins/localthings/core/template/dashboard/localthings.device.template.html": {
         "Actions": "Actions",

@@ -39,7 +39,11 @@ if (($argv[1] ?? '') === '--serve') {
                 return array('slept' => true);
             }
             throw new InvalidArgumentException('unsupported operation');
-        }
+        },
+        null,
+        null,
+        null,
+        'test-version-1'
     );
     exit($daemon->run());
 }
@@ -68,6 +72,11 @@ try {
         }
     }
     check(!empty($health['pid']), 'health answers with daemon pid');
+    check(($health['version'] ?? '') === 'test-version-1', 'health exposes loaded daemon code version');
+    check($client->runtimeStatus(10, 'test-version-1'), 'matching daemon version is current');
+    check(!$client->runtimeStatus(10, 'test-version-2'), 'stale daemon version is rejected');
+    $heartbeatData = json_decode((string) file_get_contents($runtime . '/heartbeat.json'), true);
+    check(($heartbeatData['version'] ?? '') === 'test-version-1', 'heartbeat exposes loaded daemon code version');
     check(is_file($runtime . '/daemon.pid'), 'pid file exists');
     check(is_file($runtime . '/heartbeat.json'), 'heartbeat exists');
     check(file_exists($runtime . '/daemon.sock'), 'unix socket exists');

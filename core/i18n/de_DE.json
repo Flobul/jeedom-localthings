@@ -814,7 +814,8 @@
         "Commandes configurées": "Konfigurierte Befehle",
         "Équipements actifs": "Aktive Geräte",
         "Tâche de rafraîchissement introuvable": "Aktualisierungsaufgabe nicht gefunden",
-        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Aktualisierungsaufgabe nicht gefunden, bitte installieren Sie das Plugin neu"
+        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Aktualisierungsaufgabe nicht gefunden, bitte installieren Sie das Plugin neu",
+        "L’ancien démon LocalThings ne peut pas être arrêté": "Der vorherige LocalThings-Daemon kann nicht gestoppt werden"
     },
     "plugins/localthings/core/template/dashboard/localthings.device.template.html": {
         "Actions": "Aktionen",

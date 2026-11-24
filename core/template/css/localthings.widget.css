@@ -295,7 +295,8 @@
   font-weight: 600;
   line-height: 13px;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .localthings-widget-command-content > .cmd-widget {

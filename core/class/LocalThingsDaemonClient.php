@@ -43,7 +43,7 @@ class LocalThingsDaemonClient
      * Indique si le runtime appartient toujours à un démon vivant, même quand
      * sa boucle synchrone est occupée par une opération DTLS longue.
      */
-    public function runtimeStatus($maxHeartbeatAge = 180)
+    public function runtimeStatus($maxHeartbeatAge = 180, $expectedVersion = '')
     {
         $maxHeartbeatAge = max(5, (int) $maxHeartbeatAge);
         if (!file_exists($this->socketPath())) {
@@ -53,6 +53,7 @@ class LocalThingsDaemonClient
         $heartbeat = json_decode((string) @file_get_contents($this->runtimePath . '/heartbeat.json'), true);
         if ($pid <= 1 || !is_array($heartbeat)
             || (int) ($heartbeat['pid'] ?? 0) !== $pid
+            || ((string) $expectedVersion !== '' && (string) ($heartbeat['version'] ?? '') !== (string) $expectedVersion)
             || time() - (int) ($heartbeat['updated'] ?? 0) > $maxHeartbeatAge) {
             return false;
         }

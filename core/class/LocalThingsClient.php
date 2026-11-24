@@ -319,10 +319,10 @@ class LocalThingsDeviceClient
                     $this->log('warning', '[OwnerPSK] Échec hôte=' . $host . ' port=' . ($port ?? '?')
                         . ' tentative=' . $attempt . '/' . $attempts . ' : ' . $error->getMessage());
                     $kind = self::connectionFailureKind($error);
-                    if ($attempt >= $attempts || !in_array($kind, array('dtls_handshake_timeout', 'coap_timeout'), true)) {
+                    if ($attempt >= $attempts || !self::isRetryableOwnerPskImportFailure($kind)) {
                         throw $error;
                     }
-                    $this->log('info', '[OwnerPSK] Timeout ; re-découverte du port annoncé et nouvelle association à port source frais');
+                    $this->log('info', '[OwnerPSK] Échec transitoire ; re-découverte du port annoncé et nouvelle association à port source frais');
                 } finally {
                     if ($session !== null) { $session->close(); }
                 }
@@ -1212,8 +1212,15 @@ class LocalThingsDeviceClient
         if (strpos($message, 'ownerpsk_rpc_timeout') !== false || strpos($message, 'ownerpsk_read_timeout') !== false) {
             return 'coap_timeout';
         }
-        if (strpos($message, 'ownerpsk_connect_failed') !== false) {
-            return 'dtls_refused';
+        if (strpos($message, 'ownerpsk_connect_auth_failed') !== false) {
+            return 'dtls_auth_failed';
+        }
+        if (strpos($message, 'ownerpsk_connect_transient') !== false
+            || strpos($message, 'ownerpsk_connect_failed') !== false) {
+            // `connect_failed` is the legacy helper code used by 0.9.0/0.9.1.
+            // It represented the same cold-handshake interruption observed on
+            // MIM-H04EN, so keep one bounded fresh retry during upgrades.
+            return 'dtls_transient';
         }
         if (strpos($message, 'errno=111') !== false || strpos($message, 'connection refused') !== false) {
             return 'udp_refused';
@@ -1237,6 +1244,12 @@ class LocalThingsDeviceClient
             return 'cancelled';
         }
         return 'other';
+    }
+
+    /** Autorise une seule relance fraîche pour les pannes de transport transitoires. */
+    private static function isRetryableOwnerPskImportFailure($kind)
+    {
+        return in_array($kind, array('dtls_handshake_timeout', 'dtls_transient', 'coap_timeout'), true);
     }
 
     /** Referme toutes les sessions détenues par ce client. */
@@ -1519,9 +1532,11 @@ class LocalThingsDeviceClient
 
     /**
      * Lit et indexe les représentations annoncées par `/device/0`.
+     * Les passerelles EHS peuvent ne renvoyer que des liens : dans ce cas les
+     * représentations sont relues individuellement sur la même session DTLS.
      *
      * @param LocalThingsSession $session Session CoAP active.
-     * @return array<string,array<string,mixed>> Ressources indexées par URI.
+     * @return array<string,array<string,mixed>> Ressources indexées par URI canonique.
      */
     private function readResources(LocalThingsSession $session, $path = array('device', '0'))
     {
@@ -1544,13 +1559,63 @@ class LocalThingsDeviceClient
         if (!is_array($decoded)) {
             throw new RuntimeException(sprintf(__('La réponse %s est invalide', __FILE__), $href));
         }
+
+        $namespace = isset($path[0])
+            && preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', (string) $path[0])
+            ? '/' . strtolower((string) $path[0])
+            : '';
         $resources = array();
-        foreach (array_slice($decoded, 1) as $entry) {
-            if (!is_array($entry) || empty($entry['href']) || !isset($entry['rep']) || !is_array($entry['rep'])) {
-                continue;
+        $stubs = array();
+        $entries = isset($decoded['links']) ? (array) $decoded['links'] : $decoded;
+        foreach (array_slice((array) $entries, 0, 128) as $entry) {
+            if (!is_array($entry)) { continue; }
+            $links = isset($entry['links']) ? (array) $entry['links'] : array($entry);
+            foreach (array_slice($links, 0, 128) as $link) {
+                if (!is_array($link)) { continue; }
+                $wireHref = (string) ($link['href'] ?? '');
+                if (!preg_match('~^/(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_-]+$~D', $wireHref)) { continue; }
+                if ($namespace !== '' && strpos(strtolower($wireHref), $namespace . '/') !== 0) {
+                    $wireHref = $namespace . $wireHref;
+                }
+                $canonicalHref = $namespace !== '' && strpos(strtolower($wireHref), $namespace . '/') === 0
+                    ? substr($wireHref, strlen($namespace))
+                    : $wireHref;
+                if ($canonicalHref === '/device/0' || strpos($canonicalHref, '/oic/') === 0) { continue; }
+                $types = (array) ($link['rt'] ?? array());
+                if (self::isTechnicalResource($canonicalHref, array('rt' => $types))) { continue; }
+                if (isset($link['rep']) && is_array($link['rep']) && $link['rep']) {
+                    $resources[$canonicalHref] = $link['rep'];
+                    if (!isset($resources[$canonicalHref]['rt']) && $types) {
+                        $resources[$canonicalHref]['rt'] = $types;
+                    }
+                    unset($stubs[$canonicalHref]);
+                } elseif (!isset($resources[$canonicalHref])) {
+                    $stubs[$canonicalHref] = array('wire_href' => $wireHref, 'rt' => $types);
+                }
             }
-            $resources[(string) $entry['href']] = $entry['rep'];
         }
+
+        foreach ($stubs as $canonicalHref => $stub) {
+            try {
+                list($resourceCode, $resourcePayload) = $session->get($stub['wire_href'], 4.5);
+                if (($resourceCode >> 5) !== 2 || $resourcePayload === '' || strlen($resourcePayload) > 65536) {
+                    continue;
+                }
+                $representation = LocalThingsCbor::decode($resourcePayload);
+                if (!is_array($representation) || !$representation) { continue; }
+                if (!isset($representation['rt']) && $stub['rt']) {
+                    $representation['rt'] = $stub['rt'];
+                }
+                $resources[$canonicalHref] = $representation;
+            } catch (LocalThingsDiscoveryCancelled $error) {
+                throw $error;
+            } catch (Throwable $error) {
+                $this->log('debug', '[CoAP] Ressource liée non lisible ; référence='
+                    . substr(hash('sha256', $canonicalHref), 0, 12)
+                    . ' ; cause=' . self::connectionFailureKind($error));
+            }
+        }
+
         if (count($resources) === 0) {
             throw new RuntimeException(sprintf(__('La réponse %s ne contient aucune ressource', __FILE__), $href));
         }

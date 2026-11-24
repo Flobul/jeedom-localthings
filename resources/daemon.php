@@ -24,7 +24,8 @@ $daemon = new LocalThingsDaemon(
     },
     function ($level, $message) {
         log::add('localthings_daemon', $level, $message);
-    }
+    },
+    localthings::$_pluginVersion
 );
 
 try {

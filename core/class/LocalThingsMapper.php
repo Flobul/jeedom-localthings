@@ -74,9 +74,20 @@ class LocalThingsMapper
             }
         }
 
-        // Samsung déclare aussi ses EHS comme oic.d.airconditioner.
-        // Le modèle local est plus précis que ce type générique. Un kit Wi-Fi
-        // peut annoncer des ressources EHS sans être lui-même une PAC.
+        // Samsung déclare aussi ses EHS comme oic.d.airconditioner. Le kit Wi-Fi
+        // MIM-H04EN n'est classé EHS que lorsque plusieurs surfaces métier PAC
+        // concordent ; une seule ressource de diagnostic EHS ne suffit pas.
+        $ehsSignatures = 0;
+        foreach (array(
+            '/mode/dhw/vs/0', '/power/dhw/vs/0', '/temperatures/dhw/vs/0',
+            '/temperatures/zone2/indoor/vs/0', '/controllerstatus/ehs/vs/0',
+        ) as $ehsHref) {
+            if (isset($resources[$ehsHref])) { $ehsSignatures++; }
+        }
+        if ($ehsSignatures >= 2
+            && (isset($resources['/mode/dhw/vs/0']) || isset($resources['/temperatures/dhw/vs/0']))) {
+            return 'ehs';
+        }
         $information = $resources['/information/vs/0'] ?? array();
         foreach (array($identity['model'] ?? '', $information['x.com.samsung.da.modelNum'] ?? '') as $candidateModel) {
             $modelFamily = strtoupper(explode('|', (string) $candidateModel, 2)[0]);
@@ -220,7 +231,7 @@ class LocalThingsMapper
             }
             $bound = false;
             foreach ($representation as $field => $rawValue) {
-                if (!$this->includeField($field) || $this->skipFallbackField($href, $field, $resources)) {
+                if (!$this->includeField($href, $field) || $this->skipFallbackField($href, $field, $resources)) {
                     continue;
                 }
                 $bound = true;
@@ -250,7 +261,7 @@ class LocalThingsMapper
                     'unit' => $unit,
                     'category' => $this->category($href, $field),
                     'value' => $value,
-                    'options' => $this->optionsFor($field, $rawValue, $representation),
+                    'options' => $this->optionsFor($field, $rawValue, $representation, $href),
                     'actions' => $actions,
                 );
                 $entities[] = $entity;
@@ -702,7 +713,7 @@ class LocalThingsMapper
             return $this->switchActions($recipe);
         }
 
-        $options = $this->optionsFor($field, $value, $representation);
+        $options = $this->optionsFor($field, $value, $representation, $href);
         if (count($options) > 0 && $this->isWritableOptionField($href, $field)) {
             if (
                 is_array($value)
@@ -1377,7 +1388,7 @@ class LocalThingsMapper
      * @param array<string,mixed> $representation Représentation de la ressource.
      * @return mixed[]
      */
-    private function optionsFor($field, $value, $representation)
+    private function optionsFor($field, $value, $representation, $href = '')
     {
         $candidates = array();
         if (
@@ -1415,6 +1426,14 @@ class LocalThingsMapper
                     if (is_scalar($currentValue) && !in_array($currentValue, $options, true)) {
                         $options[] = $currentValue;
                     }
+                }
+                // Certains climatiseurs acceptent le preset dynamique Quiet sans
+                // l'annoncer dans supportedModes (#327). Le limiter strictement à
+                // la ressource convenient pour ne pas polluer le mode HVAC normal.
+                if (strpos((string) $href, '/mode/convenient/') !== false
+                    && preg_match('/(?:^|\.)modes$/i', (string) $field)
+                    && !in_array('Quiet', $options, true)) {
+                    $options[] = 'Quiet';
                 }
                 return $options;
             }
@@ -1471,6 +1490,9 @@ class LocalThingsMapper
             'none' => __('Aucun', __FILE__),
             'auto' => __('Automatique', __FILE__),
             'automatic' => __('Automatique', __FILE__),
+            'std' => __('Standard', __FILE__),
+            'force' => __('Forcé', __FILE__),
+            'power' => __('Puissance maximale', __FILE__),
             'on' => __('Activé', __FILE__),
             'off' => __('Désactivé', __FILE__),
             'enabled' => __('Activé', __FILE__),
@@ -1531,6 +1553,12 @@ class LocalThingsMapper
      */
     private function rangeFor($field, $representation)
     {
+        foreach ($representation as $conditionField => $conditionValue) {
+            if (stripos((string) $conditionField, 'displaycondition.button') !== false
+                && in_array(strtolower(trim((string) $conditionValue)), array('disable', 'disabled', 'hide', 'hidden'), true)) {
+                return null;
+            }
+        }
         foreach (array('range', $field . 'Range', 'x.com.samsung.da.range') as $rangeField) {
             $range = $representation[$rangeField] ?? null;
             if (is_array($range) && count($range) >= 2 && is_numeric($range[0]) && is_numeric($range[1])) {
@@ -1541,17 +1569,23 @@ class LocalThingsMapper
                         break;
                     }
                 }
-                return array($range[0] + 0, $range[1] + 0, $step);
+                $minimum = $range[0] + 0;
+                $maximum = $range[1] + 0;
+                if ($minimum >= $maximum) { return null; }
+                return array($minimum, $maximum, is_numeric($step) && $step > 0 ? $step : 1);
             }
         }
         $minimum = $representation['x.com.samsung.da.minimum'] ?? ($representation['minimum'] ?? null);
         $maximum = $representation['x.com.samsung.da.maximum'] ?? ($representation['maximum'] ?? null);
         if (is_numeric($minimum) && is_numeric($maximum)) {
+            $minimum = $minimum + 0;
+            $maximum = $maximum + 0;
+            if ($minimum >= $maximum) { return null; }
             $step = $representation['x.com.samsung.da.increment'] ?? ($representation['increment'] ?? 1);
             return array(
-                $minimum + 0,
-                $maximum + 0,
-                is_numeric($step) ? $step + 0 : 1,
+                $minimum,
+                $maximum,
+                is_numeric($step) && $step > 0 ? $step + 0 : 1,
             );
         }
         return null;
@@ -1617,12 +1651,16 @@ class LocalThingsMapper
      * @param mixed $field Nom du champ.
      * @return bool
      */
-    private function includeField($field)
+    private function includeField($href, $field)
     {
         if (!is_string($field) || $field === '' || preg_match(self::SENSITIVE_PATTERN, $field)) {
             return false;
         }
         if ($this->endsWith($field, '.options') || stripos($field, 'supportedModes') !== false) {
+            return false;
+        }
+        if (strpos((string) $href, '/temperatures/') === 0
+            && preg_match('/(?:^|\.)(?:minimum|maximum|increment|unit|type|displaycondition(?:\.|$))/i', $field)) {
             return false;
         }
         return !in_array($field, array('href', 'rt', 'if', 'p', 'eps', 'range'), true);
@@ -2016,18 +2054,22 @@ class LocalThingsMapper
             '/dnd/vs/0|x.com.samsung.da.value' => __('Ne pas déranger', __FILE__),
             '/dnd/vs/0|x.com.samsung.da.startTime' => __('Début du mode Ne pas déranger', __FILE__),
             '/dnd/vs/0|x.com.samsung.da.endTime' => __('Fin du mode Ne pas déranger', __FILE__),
-            '/mode/vs/0|x.com.samsung.da.modes' => __('Mode', __FILE__),
+            '/mode/vs/0|x.com.samsung.da.modes' => __('Mode chauffage/climatisation', __FILE__),
             '/mode/convenient/vs/0|x.com.samsung.da.modes' => __('Mode de confort', __FILE__),
             '/modeoption/windfree/vs/0|x.com.samsung.da.windfree' => __('WindFree', __FILE__),
             '/modeoption/windsleep/vs/0|x.com.samsung.da.windsleep' => __('WindFree Sleep', __FILE__),
-            '/mode/dhw/vs/0|x.com.samsung.da.modes' => __('Mode eau chaude', __FILE__),
+            '/mode/dhw/vs/0|x.com.samsung.da.modes' => __('Mode ECS', __FILE__),
             '/water/consumption/vs/0|x.com.samsung.da.cumulativeWater' => __('Quantité d’eau consommée', __FILE__),
             '/specialzone/one/vs/0|roomDesiredMode' => __('Programme de la zone boissons', __FILE__),
-            '/power/dhw/vs/0|x.com.samsung.da.power' => __('Chauffe-eau', __FILE__),
-            '/temperatures/indoor/vs/0|x.com.samsung.da.current' => __('Température intérieure', __FILE__),
-            '/temperatures/indoor/vs/0|x.com.samsung.da.desired' => __('Consigne intérieure', __FILE__),
-            '/temperatures/dhw/vs/0|x.com.samsung.da.current' => __('Température de l’eau chaude', __FILE__),
-            '/temperatures/dhw/vs/0|x.com.samsung.da.desired' => __('Consigne d’eau chaude', __FILE__),
+            '/power/dhw/vs/0|x.com.samsung.da.power' => __('Marche ECS', __FILE__),
+            '/temperatures/indoor/vs/0|x.com.samsung.da.current' => __('Température Zone 1', __FILE__),
+            '/temperatures/indoor/vs/0|x.com.samsung.da.desired' => __('Consigne Zone 1', __FILE__),
+            '/temperatures/indoor/vs/0|x.com.samsung.da.offset' => __('Décalage loi d’eau Zone 1', __FILE__),
+            '/temperatures/zone2/indoor/vs/0|x.com.samsung.da.current' => __('Température Zone 2', __FILE__),
+            '/temperatures/zone2/indoor/vs/0|x.com.samsung.da.desired' => __('Consigne Zone 2', __FILE__),
+            '/temperatures/zone2/indoor/vs/0|x.com.samsung.da.offset' => __('Décalage loi d’eau Zone 2', __FILE__),
+            '/temperatures/dhw/vs/0|x.com.samsung.da.current' => __('Température ECS', __FILE__),
+            '/temperatures/dhw/vs/0|x.com.samsung.da.desired' => __('Consigne ECS', __FILE__),
             '/temperatures/outside/vs/0|x.com.samsung.da.current' => __('Température extérieure', __FILE__),
             '/energy/consumption/vs/0|x.com.samsung.da.instantaneousPower' => __('Puissance instantanée', __FILE__),
             '/energy/consumption/vs/0|x.com.samsung.da.cumulativeConsumption' => __('Consommation cumulée', __FILE__),

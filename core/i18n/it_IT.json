@@ -814,7 +814,8 @@
         "Commandes configurées": "Comandi configurati",
         "Équipements actifs": "Apparecchiature attive",
         "Tâche de rafraîchissement introuvable": "Impossibile trovare l'attività di aggiornamento",
-        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Attività di aggiornamento non trovata, reinstallare il plugin"
+        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Attività di aggiornamento non trovata, reinstallare il plugin",
+        "L’ancien démon LocalThings ne peut pas être arrêté": "Impossibile arrestare il daemon LocalThings precedente"
     },
     "plugins/localthings/core/template/dashboard/localthings.device.template.html": {
         "Actions": "Stock",

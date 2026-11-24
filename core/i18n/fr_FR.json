@@ -814,7 +814,8 @@
         "Commandes configurées": "Commandes configurées",
         "Équipements actifs": "Équipements actifs",
         "Tâche de rafraîchissement introuvable": "Tâche de rafraîchissement introuvable",
-        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Tâche de rafraîchissement introuvable, réinstallez le plugin"
+        "Tâche de rafraîchissement introuvable, réinstallez le plugin": "Tâche de rafraîchissement introuvable, réinstallez le plugin",
+        "L’ancien démon LocalThings ne peut pas être arrêté": "L’ancien démon LocalThings ne peut pas être arrêté"
     },
     "plugins/localthings/core/template/dashboard/localthings.device.template.html": {
         "Actions": "Actions",
