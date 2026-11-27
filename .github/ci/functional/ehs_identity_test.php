@@ -65,6 +65,8 @@ $cumulative = array_filter($mapped['entities'], function ($entity) {
 if (count($cumulative) !== 1) { throw new RuntimeException('Duplicate EHS cumulative energy'); }
 
 $controlResources = array(
+    '/power/0' => array('value' => true),
+    '/power/vs/0' => array('x.com.samsung.da.power' => 'On'),
     '/mode/vs/0' => array(
         'x.com.samsung.da.modes' => 'heat',
         'x.com.samsung.da.supportedModes' => array('auto', 'cool', 'heat'),
@@ -104,6 +106,18 @@ $controlResources = array(
 $controls = $mapper->map($controlResources);
 $controlsByName = array();
 foreach ($controls['entities'] as $entity) { $controlsByName[$entity['name']] = $entity; }
+$genericPower = null;
+$vendorPower = null;
+foreach ($controls['entities'] as $entity) {
+    if (strpos((string) ($entity['key'] ?? ''), 'power_0_value_') === 0) { $genericPower = $entity; }
+    if (strpos((string) ($entity['key'] ?? ''), 'power_vs_0_power_') === 0) { $vendorPower = $entity; }
+}
+if ($genericPower === null || count($genericPower['actions']) !== 0) {
+    throw new RuntimeException('EHS generic /power/0 must be read-only when vendor power exists');
+}
+if ($vendorPower === null || count($vendorPower['actions']) === 0) {
+    throw new RuntimeException('EHS commands must prefer writable /power/vs/0');
+}
 foreach (array(
     'Mode chauffage/climatisation', 'Mode ECS', 'Marche ECS',
     'Température Zone 1', 'Consigne Zone 1',

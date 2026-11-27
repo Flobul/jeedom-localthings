@@ -97,12 +97,18 @@ $temperatures = $mapper->map(array(
                 'x.com.samsung.da.id' => 'Fridge',
                 'x.com.samsung.da.description' => 'Fridge',
                 'x.com.samsung.da.current' => 5,
+                'x.com.samsung.da.desired' => 4,
+                'x.com.samsung.da.minimum' => 1,
+                'x.com.samsung.da.maximum' => 7,
                 'x.com.samsung.da.unit' => 'Celsius',
             ),
             array(
                 'x.com.samsung.da.id' => 'Freezer',
                 'x.com.samsung.da.description' => 'Freezer',
                 'x.com.samsung.da.current' => -18,
+                'x.com.samsung.da.desired' => -19,
+                'x.com.samsung.da.minimum' => -23,
+                'x.com.samsung.da.maximum' => -15,
                 'x.com.samsung.da.unit' => 'Celsius',
             ),
         ),
@@ -122,6 +128,9 @@ $fridgeTemperature = current(array_filter($temperatures['entities'], function ($
 $freezerTemperature = current(array_filter($temperatures['entities'], function ($entity) {
     return strpos((string) ($entity['key'] ?? ''), 'temperatureItem_Freezer_current') !== false;
 }));
+$freezerTarget = current(array_filter($temperatures['entities'], function ($entity) {
+    return strpos((string) ($entity['key'] ?? ''), 'temperatureItem_Freezer_desired') !== false;
+}));
 assertRefrigeratorWidget(
     LocalThingsWidget::statusDeduplicationKey('refrigerator', $fridgeTemperature['key'], $fridgeTemperature['name'])
         !== LocalThingsWidget::statusDeduplicationKey('refrigerator', $freezerTemperature['key'], $freezerTemperature['name']),
@@ -137,6 +146,9 @@ $fridgeTemperaturePresentation = LocalThingsWidget::presentation(
 $freezerTemperaturePresentation = LocalThingsWidget::presentation(
     'refrigerator', $freezerTemperature['key'], 'info', 'status', $freezerTemperature['name']
 );
+$freezerTargetPresentation = LocalThingsWidget::presentation(
+    'refrigerator', $freezerTarget['key'], 'info', 'status', $freezerTarget['name']
+);
 assertRefrigeratorWidget(
     $fridgeTemperaturePresentation['label'] === 'Température réfrigérateur',
     'Fridge temperature label missing'
@@ -144,6 +156,24 @@ assertRefrigeratorWidget(
 assertRefrigeratorWidget(
     $freezerTemperaturePresentation['label'] === 'Température congélateur',
     'Freezer temperature label missing'
+);
+assertRefrigeratorWidget(
+    $freezerTemperaturePresentation['icon'] !== $freezerTargetPresentation['icon'],
+    'Measured and target refrigerator temperatures need distinct icons'
+);
+$widgetCss = file_get_contents(dirname(__DIR__, 3) . '/core/template/css/localthings.widget.css');
+assertRefrigeratorWidget(
+    strpos($widgetCss, '[data-device-type="refrigerator"] .localthings-widget-status') !== false,
+    'Refrigerator status cards need a dedicated normal-width layout'
+);
+assertRefrigeratorWidget(
+    strpos($widgetCss, '-webkit-line-clamp: 2') !== false,
+    'Command labels must explicitly support two visible lines'
+);
+assertRefrigeratorWidget(
+    strpos($widgetCss, '.localthings-widget-mobile[data-device-type="refrigerator"] .localthings-widget-status') !== false
+        && strpos($widgetCss, 'flex: 0 0 100%') !== false,
+    'The 245px mobile refrigerator widget must use one readable status column'
 );
 
 fwrite(STDOUT, "LocalThings refrigerator multi-door widget: OK\n");

@@ -655,9 +655,13 @@ class LocalThingsMapper
     {
         $actions = array();
         $recipe = array('href' => $href, 'field' => $field);
+        $ehsVendorPower = isset($resources['/power/vs/0'])
+            && (isset($resources['/mode/dhw/vs/0'])
+                || isset($resources['/power/dhw/vs/0'])
+                || isset($resources['/temperatures/dhw/vs/0']));
 
         if ($href === '/power/0' && $field === 'value') {
-            if (!$this->modelAllowsPowerOnOff($resources)) {
+            if ($ehsVendorPower || !$this->modelAllowsPowerOnOff($resources)) {
                 return array();
             }
             $recipe['encoding'] = 'bool';
@@ -669,7 +673,8 @@ class LocalThingsMapper
         ) {
             if (
                 $href === '/power/vs/0'
-                && (isset($resources['/power/0']) || !$this->modelAllowsPowerOnOff($resources))
+                && ((isset($resources['/power/0']) && !$ehsVendorPower)
+                    || !$this->modelAllowsPowerOnOff($resources))
             ) {
                 return array();
             }
@@ -1711,6 +1716,12 @@ class LocalThingsMapper
             '/remotectrl/vs/0' => array('x.com.samsung.da.remoteControlEnabled', '/remotectrl/0'),
         );
         if (!isset($fallbacks[$href])) {
+            return false;
+        }
+        if ($href === '/power/vs/0'
+            && (isset($resources['/mode/dhw/vs/0'])
+                || isset($resources['/power/dhw/vs/0'])
+                || isset($resources['/temperatures/dhw/vs/0']))) {
             return false;
         }
         return $field === $fallbacks[$href][0] && isset($resources[$fallbacks[$href][1]]);

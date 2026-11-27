@@ -516,7 +516,9 @@ class LocalThingsWidget
             return array('label' => __('Fin différée', __FILE__), 'icon' => 'fas fa-clock', 'asset' => '');
         }
         if (strpos($identity, 'temperature_desired') !== false || strpos($identity, 'setpoint') !== false) {
-            return array('label' => __('Consigne', __FILE__), 'icon' => '', 'asset' => 'temperature.svg');
+            return $deviceType === 'refrigerator'
+                ? array('label' => __('Consigne', __FILE__), 'icon' => 'fas fa-bullseye', 'asset' => '')
+                : array('label' => __('Consigne', __FILE__), 'icon' => '', 'asset' => 'temperature.svg');
         }
         if (strpos($identity, 'drylevel') !== false) {
             return array('label' => __('Niveau de séchage', __FILE__), 'icon' => 'fas fa-layer-group', 'asset' => '');
@@ -579,10 +581,10 @@ class LocalThingsWidget
                     return array('label' => __('Porte réfrigérateur', __FILE__), 'icon' => 'fas fa-door-open', 'asset' => '');
                 }
                 if ($statusSlot === 'temperature' && $isFreezer) {
-                    return array('label' => __('Température congélateur', __FILE__), 'icon' => 'fas fa-thermometer-half', 'asset' => '');
+                    return array('label' => __('Température congélateur', __FILE__), 'icon' => 'fas fa-temperature-low', 'asset' => '');
                 }
                 if ($statusSlot === 'temperature' && $isFridge) {
-                    return array('label' => __('Température réfrigérateur', __FILE__), 'icon' => 'fas fa-thermometer-half', 'asset' => '');
+                    return array('label' => __('Température réfrigérateur', __FILE__), 'icon' => 'fas fa-temperature-low', 'asset' => '');
                 }
             }
             return $statusPresentations[$statusSlot];

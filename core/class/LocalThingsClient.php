@@ -750,7 +750,15 @@ class LocalThingsDeviceClient
                 'info',
                 '[Command] POST ' . $wireHref . ' body=' . $this->jsonForLog($write['body'])
             );
-            list($code, $response) = $session->post($wirePath, $write['body'], 15.0);
+            $postResult = $this->postCommandWithSubdeviceFallback(
+                $session,
+                $write['path'],
+                $subdeviceUuid,
+                $write['body']
+            );
+            $code = $postResult['code'];
+            $response = $postResult['response'];
+            $wirePath = $postResult['wire_path'];
             if (($code >> 5) !== 2) {
                 throw new LocalThingsCommandRejectedException(sprintf(
                     __('Écriture CoAP refusée (%s)', __FILE__),
@@ -1508,6 +1516,7 @@ class LocalThingsDeviceClient
                 }
             }
             $snapshot['subdevices'] = $subdevices;
+            self::disambiguateSnapshotNames($snapshot);
             return $snapshot;
         } catch (Throwable $exception) {
             $this->log('info', '[Diagnostic] ' . $host . ':' . $port
@@ -1645,6 +1654,67 @@ class LocalThingsDeviceClient
             }
         }
         return array_values($ids);
+    }
+
+    /** Rend distincts les noms identiques d'une passerelle et de ses sous-équipements. */
+    private static function disambiguateSnapshotNames(&$snapshot)
+    {
+        $devices = array();
+        if (isset($snapshot['device']) && is_array($snapshot['device'])) {
+            $devices[] =& $snapshot['device'];
+        }
+        if (isset($snapshot['subdevices']) && is_array($snapshot['subdevices'])) {
+            foreach ($snapshot['subdevices'] as &$subdevice) {
+                if (isset($subdevice['device']) && is_array($subdevice['device'])) {
+                    $devices[] =& $subdevice['device'];
+                }
+            }
+            unset($subdevice);
+        }
+
+        $counts = array();
+        foreach ($devices as &$device) {
+            $name = trim((string) ($device['name'] ?? ''));
+            if ($name === '') { continue; }
+            $key = strtolower($name);
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+        }
+        unset($device);
+
+        $ordinals = array();
+        foreach ($devices as &$device) {
+            $name = trim((string) ($device['name'] ?? ''));
+            $key = strtolower($name);
+            if ($name === '' || ($counts[$key] ?? 0) < 2) { continue; }
+            $ordinals[$key] = ($ordinals[$key] ?? 0) + 1;
+            $device['name'] = $name . ' ' . $ordinals[$key];
+        }
+        unset($device);
+    }
+
+    /**
+     * Rejoue une écriture de sous-équipement sur l'href canonique uniquement
+     * après un 4.04 explicite, donc sans issue d'écriture ambiguë.
+     */
+    private function postCommandWithSubdeviceFallback(
+        LocalThingsSession $session,
+        $canonicalPath,
+        $subdeviceUuid,
+        $body
+    ) {
+        $canonicalPath = array_values((array) $canonicalPath);
+        $wirePath = $canonicalPath;
+        if ($subdeviceUuid !== '') { array_unshift($wirePath, $subdeviceUuid); }
+        list($code, $response) = $session->post($wirePath, $body, 15.0);
+
+        if ($subdeviceUuid !== '' && $code === 132) {
+            $this->log('info', '[Command] href UUID absent en écriture ; nouvel essai sur /'
+                . implode('/', $canonicalPath));
+            list($code, $response) = $session->post($canonicalPath, $body, 15.0);
+            $wirePath = $canonicalPath;
+        }
+
+        return array('code' => $code, 'response' => $response, 'wire_path' => $wirePath);
     }
 
     private static function appendSubdeviceId(&$ids, $candidate)

@@ -1,6 +1,12 @@
 # Changelog
 ## Non publié
 
+## Version 0.9.3 (27/11/2026)
+
+- Les passerelles EHS qui annoncent les lectures sous un chemin préfixé par UUID mais refusent l’écriture à cet emplacement retentent désormais uniquement après un refus explicite `4.04 Not Found`, sur l’URI canonique annoncée. Les timeouts et les réponses ambiguës ne sont jamais rejoués.
+- Sur les installations EHS, la commande d’alimentation privilégie la ressource Samsung `/power/vs/0` réellement pilotable ; la ressource générique `/power/0`, qui pouvait acquitter une commande sans l’appliquer, reste disponible en information seulement.
+- Lorsque la passerelle et plusieurs PAC renvoient exactement le même nom, les nouveaux équipements reçoivent automatiquement un numéro distinct. Le widget réfrigérateur affiche ses quatre températures/consignes sur deux colonnes, avec deux lignes de libellé et des icônes différentes pour la température mesurée et la consigne.
+
 ## Version 0.9.2 (24/11/2026)
 
 - Une mise à jour ne peut plus laisser tourner en mémoire une ancienne version du démon : sa version est publiée dans le heartbeat, un démon obsolète est arrêté avant redémarrage et l’arrêt est forcé via le mécanisme du core Jeedom s’il reste bloqué dans un échange DTLS. Cela garantit que les correctifs `Nano`, `Quiet` et listes autorisées deviennent réellement actifs après la mise à jour.

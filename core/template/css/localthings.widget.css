@@ -145,6 +145,7 @@
   align-items: stretch;
   justify-content: center;
   gap: 6px;
+  flex-wrap: wrap;
   padding-bottom: 8px;
   border-bottom: 1px solid rgba(127, 127, 127, .16);
 }
@@ -287,7 +288,7 @@
 }
 
 .localthings-widget-command-label {
-  display: block;
+  display: -webkit-box;
   margin-bottom: 2px;
   overflow: hidden;
   opacity: .72;
@@ -297,6 +298,25 @@
   text-overflow: ellipsis;
   white-space: normal;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  min-height: 26px;
+  max-height: 26px;
+}
+
+.localthings-widget[data-device-type="refrigerator"] .localthings-widget-status .localthings-widget-command {
+  box-sizing: border-box;
+  flex: 0 0 calc(50% - 3px);
+  min-width: 0;
+  max-width: calc(50% - 3px);
+}
+
+/* Le widget mobile peut descendre à 245 px : une seule colonne évite de
+ * rogner les noms réfrigérateur/congélateur malgré les deux lignes permises. */
+.localthings-widget-mobile[data-device-type="refrigerator"] .localthings-widget-status .localthings-widget-command {
+  flex: 0 0 100%;
+  max-width: 100%;
 }
 
 .localthings-widget-command-content > .cmd-widget {
