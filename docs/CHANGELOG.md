@@ -3,6 +3,7 @@
 
 ## Version 0.9.3 (27/11/2026)
 
+- Les écritures Samsung utilisent désormais la méthode CoAP `PUT` attendue par les ressources opérationnelles, au lieu de `POST`. Pour une PAC derrière une passerelle EHS, l’écriture conserve le chemin préfixé par son UUID et n’est plus rejouée dans l’espace de la passerelle parente. Les consignes EHS utilisent également le format texte attendu par le firmware.
 - Les passerelles EHS qui annoncent les lectures sous un chemin préfixé par UUID mais refusent l’écriture à cet emplacement retentent désormais uniquement après un refus explicite `4.04 Not Found`, sur l’URI canonique annoncée. Les timeouts et les réponses ambiguës ne sont jamais rejoués.
 - Sur les installations EHS, la commande d’alimentation privilégie la ressource Samsung `/power/vs/0` réellement pilotable ; la ressource générique `/power/0`, qui pouvait acquitter une commande sans l’appliquer, reste disponible en information seulement.
 - Lorsque la passerelle et plusieurs PAC renvoient exactement le même nom, les nouveaux équipements reçoivent automatiquement un numéro distinct. Le widget réfrigérateur affiche ses quatre températures/consignes sur deux colonnes, avec deux lignes de libellé et des icônes différentes pour la température mesurée et la consigne.

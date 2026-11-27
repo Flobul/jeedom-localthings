@@ -748,17 +748,17 @@ class LocalThingsDeviceClient
             $wireHref = '/' . implode('/', $wirePath);
             $this->log(
                 'info',
-                '[Command] POST ' . $wireHref . ' body=' . $this->jsonForLog($write['body'])
+                '[Command] PUT ' . $wireHref . ' body=' . $this->jsonForLog($write['body'])
             );
-            $postResult = $this->postCommandWithSubdeviceFallback(
+            $writeResult = $this->putCommand(
                 $session,
                 $write['path'],
                 $subdeviceUuid,
                 $write['body']
             );
-            $code = $postResult['code'];
-            $response = $postResult['response'];
-            $wirePath = $postResult['wire_path'];
+            $code = $writeResult['code'];
+            $response = $writeResult['response'];
+            $wirePath = $writeResult['wire_path'];
             if (($code >> 5) !== 2) {
                 throw new LocalThingsCommandRejectedException(sprintf(
                     __('Écriture CoAP refusée (%s)', __FILE__),
@@ -1692,11 +1692,8 @@ class LocalThingsDeviceClient
         unset($device);
     }
 
-    /**
-     * Rejoue une écriture de sous-équipement sur l'href canonique uniquement
-     * après un 4.04 explicite, donc sans issue d'écriture ambiguë.
-     */
-    private function postCommandWithSubdeviceFallback(
+    /** Écrit sur l'href réel du sous-équipement avec la méthode CoAP PUT. */
+    private function putCommand(
         LocalThingsSession $session,
         $canonicalPath,
         $subdeviceUuid,
@@ -1705,14 +1702,7 @@ class LocalThingsDeviceClient
         $canonicalPath = array_values((array) $canonicalPath);
         $wirePath = $canonicalPath;
         if ($subdeviceUuid !== '') { array_unshift($wirePath, $subdeviceUuid); }
-        list($code, $response) = $session->post($wirePath, $body, 15.0);
-
-        if ($subdeviceUuid !== '' && $code === 132) {
-            $this->log('info', '[Command] href UUID absent en écriture ; nouvel essai sur /'
-                . implode('/', $canonicalPath));
-            list($code, $response) = $session->post($canonicalPath, $body, 15.0);
-            $wirePath = $canonicalPath;
-        }
+        list($code, $response) = $session->put($wirePath, $body, 15.0);
 
         return array('code' => $code, 'response' => $response, 'wire_path' => $wirePath);
     }

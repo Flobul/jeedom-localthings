@@ -531,6 +531,7 @@ class LocalThingsCoap
 
     public const METHOD_GET = 0x01;
     public const METHOD_POST = 0x02;
+    public const METHOD_PUT = 0x03;
 
     public const OPTION_OBSERVE = 6;
     public const OPTION_URI_PATH = 11;
@@ -1077,10 +1078,22 @@ class LocalThingsSession
      */
     public function post($pathSegments, $value, $timeout = 15.0)
     {
+        return $this->writeRequest(LocalThingsCoap::METHOD_POST, 'POST', $pathSegments, $value, $timeout);
+    }
+
+    /** Écrit une valeur CBOR avec la méthode CoAP PUT. */
+    public function put($pathSegments, $value, $timeout = 15.0)
+    {
+        return $this->writeRequest(LocalThingsCoap::METHOD_PUT, 'PUT', $pathSegments, $value, $timeout);
+    }
+
+    /** Exécute une écriture CBOR POST ou PUT. */
+    private function writeRequest($method, $methodLabel, $pathSegments, $value, $timeout)
+    {
         $timeout = LocalThingsOperationDeadline::timeout($timeout);
         $pathSegments = $this->normalizePath($pathSegments);
         $pathLabel = '/' . implode('/', $pathSegments);
-        $this->log('debug', sprintf(__('[CoAP] POST %s démarré', __FILE__), $pathLabel));
+        $this->log('debug', sprintf(__('[CoAP] %1$s %2$s démarré', __FILE__), $methodLabel, $pathLabel));
         $token = $this->nextToken();
         $options = array();
         foreach ($pathSegments as $segment) {
@@ -1095,7 +1108,7 @@ class LocalThingsSession
             LocalThingsCoap::encodeUint(LocalThingsCoap::CONTENT_FORMAT_CBOR)
         );
         $response = $this->exchange(
-            LocalThingsCoap::METHOD_POST,
+            $method,
             $token,
             $options,
             LocalThingsCbor::encode($value),
@@ -1104,7 +1117,8 @@ class LocalThingsSession
         $this->log(
             'debug',
             sprintf(
-                __('[CoAP] POST %1$s -> %2$s, payload=%3$d octets', __FILE__),
+                __('[CoAP] %1$s %2$s -> %3$s, payload=%4$d octets', __FILE__),
+                $methodLabel,
                 $pathLabel,
                 LocalThingsCoap::formatCode((int) $response['code']),
                 strlen((string) $response['payload'])

@@ -743,7 +743,9 @@ class LocalThingsMapper
 
         $range = $this->rangeFor($field, $representation);
         if ($range !== null && is_numeric($value) && $this->isWritableNumberField($href, $field)) {
-            $recipe['encoding'] = is_string($value)
+            $ehsTargetTemperature = $field === 'x.com.samsung.da.desired'
+                && preg_match('#^/temperatures/(?:indoor|zone2/indoor|dhw)/vs/0$#', $href);
+            $recipe['encoding'] = ($ehsTargetTemperature || is_string($value))
                 ? 'numeric_string'
                 : (is_int($value) ? 'integer' : 'number');
             $action = $this->valueAction('set', __('Régler', __FILE__), 'slider', $recipe);

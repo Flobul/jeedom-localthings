@@ -132,6 +132,11 @@ if (count($controlsByName['Consigne Zone 1']['actions']) !== 0) {
 if (count($controlsByName['Consigne Zone 2']['actions']) !== 1) {
     throw new RuntimeException('Writable EHS Zone 2 range must keep its slider');
 }
+$zone2Action = $controlsByName['Consigne Zone 2']['actions'][0];
+$zone2Write = $mapper->buildWrite($zone2Action['extra']['recipe'], 37, $controlResources);
+if (($zone2Write['body']['x.com.samsung.da.desired'] ?? null) !== '37') {
+    throw new RuntimeException('EHS target temperatures must use the Samsung string payload contract');
+}
 foreach ($controls['entities'] as $entity) {
     if (preg_match('/^(Minimum|Maximum|Incrément|Unité|Type|Condition)/i', $entity['name'])) {
         throw new RuntimeException('EHS temperature metadata leaked as a user command: ' . $entity['name']);

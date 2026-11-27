@@ -88,3 +88,30 @@ foreach (array('valid', 'changed', 'denied') as $mode) {
     }
 }
 echo "OK: complete multi-block reads, stable tokens, changed representation and authorization error\n";
+
+class PutTransport extends LocalThingsDtlsClient {
+    public $method;
+    private $frames = array();
+    public function __construct() {}
+    public function write($packet) {
+        $request = LocalThingsCoap::parse($packet);
+        $this->method = $request['code'];
+        $this->frames[] = LocalThingsCoap::build(
+            LocalThingsCoap::TYPE_ACK,
+            68,
+            $request['message_id'],
+            $request['token'],
+            array(),
+            ''
+        );
+    }
+    public function readFrame($timeout = 4.0) { return array_shift($this->frames); }
+    public function close() {}
+}
+$t = new PutTransport();
+$s = new LocalThingsSession($t);
+if ($s->put('/mode/dhw/vs/0', array('x.com.samsung.da.modes' => array('Eco')), 1.0) !== array(68, '')
+    || $t->method !== LocalThingsCoap::METHOD_PUT) {
+    throw new Exception('Samsung writes must emit CoAP PUT, method code 0.03');
+}
+echo "OK: Samsung resource writes use CoAP PUT\n";
